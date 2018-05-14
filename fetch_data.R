@@ -1,18 +1,9 @@
-#
-# This is the server logic of a Shiny web application. You can run the 
-# application by clicking 'Run App' above.
-#
-# Find out more about building applications with Shiny here:
-# 
-#    http://shiny.rstudio.com/
-#
-
+# Sample data ... fetch data and play
 library(readr)
-library(shiny)
 library(RJSONIO)
 library(curl)
 library(base64enc)
-# Define server logic required to draw a histogram
+library(ggplot2)
 
 # Read the secrets
 secret_hologram <- read_delim("./secret_hologram.txt", 
@@ -63,16 +54,7 @@ c_plot <- ggplot(data = curr_data,aes(x=deviceid))+
   geom_text(aes(y=PM1,label=Timestamp),hjust=0, vjust=0) +
   ylim(0,max(curr_data$PM1))
 
+c_plot
 
-shinyServer(function(input, output) {
-  
-  output$distPlot <- renderPlot({
-    
-    ggplot(data = curr_data,aes(x=deviceid))+
-      geom_bar(aes(y=PM1),stat = StatIdentity) +
-      geom_text(aes(y=PM1,label=Timestamp),hjust=0, vjust=0) +
-      ylim(0,max(curr_data$PM1))
-    
-  })
-  
-})
+
+
