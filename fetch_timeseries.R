@@ -18,38 +18,79 @@ built_url <- paste0(base_url,
 req1 <- curl_fetch_memory(built_url)
 jreq1 <- fromJSON(rawToChar(req1$content))$data
 nsites <- length(jreq1)
-tseries_data <- data.frame(deviceid = (1:nsites),ODIN = "a")
+devices <- data.frame(deviceid = (1:nsites),ODIN = NA)
 for (i in (1:nsites)){
-  tseries_data$deviceid[i] <- jreq1[[i]]$id
-  tseries_data$ODIN[i] <- jreq1[[i]]$name
+  devices$deviceid[i] <- jreq1[[i]]$id
+  devices$ODIN[i] <- jreq1[[i]]$name
 }
 
-# Get the last 600 measurements
+# Get the last X measurements
+nmeas <- 60*48
 base_url <- "https://dashboard.hologram.io/api/1/csr/rdm?"
-tseries_data$PM1 <- -1
-tseries_data$PM2.5 <- -1
-tseries_data$PM10 <- -1
-tseries_data$Temperature <- -99
-tseries_data$RH <- -1
-tseries_data$Timestamp <- as.POSIXct("2018-05-01 00:00:00",tz='UTC')
-i <- 1
-  built_url <- paste0(base_url,
-                      "deviceid=165071&",
-                      "limit=600&",
-                      "orgid=",secret_hologram$orgid,"&",
-                      "apikey=",secret_hologram$apikey)
-  req2 <- curl_fetch_memory(built_url)
-  jreq2 <- fromJSON(rawToChar(req2$content))$data
-  payload <- fromJSON(rawToChar(base64decode(fromJSON(jreq2[[1]]$data)$data)))
+ndev <- length(devices$deviceid)
+for (i_dev in (1:ndev)){
+    n_steps <- ceiling(nmeas/1000)
+    for (step in (1:n_steps)){
+      if (step == 1){
+        built_url <- paste0(base_url,
+                            "deviceid=",devices$deviceid[i_dev],"&",
+                            "limit=",nmeas,"&",
+                            "timestart=1526249648&",
+                            "orgid=",secret_hologram$orgid,"&",
+                            "apikey=",secret_hologram$apikey)
+        req2 <- curl_fetch_memory(built_url)
+        jreq2 <- fromJSON(rawToChar(req2$content))$data
+      } else {
+        built_url <- paste0(base_url,
+                            "deviceid=",devices$deviceid[i_dev],"&",
+                            "limit=",nmeas,"&",
+                            "timestart=1526249648&",
+                            "startat=",startat,"&",
+                            "orgid=",secret_hologram$orgid,"&",
+                            "apikey=",secret_hologram$apikey)
+        req2 <- curl_fetch_memory(built_url)
+        jreq2 <- append(jreq2,fromJSON(rawToChar(req2$content))$data)
+      }
+      last <- length(jreq2)
+      startat <- jreq2[[last]]$id
+    }
   
+  ndata <- length(jreq2)
+  rm(c_data)
+  c_data <- data.frame(id = (1:ndata))
+  c_data$serialn <- devices$ODIN[i_dev]
+  c_data$device <- devices$deviceid[i_dev]
+  c_data$PM1 <- NA
+  c_data$PM2.5 <- NA
+  c_data$PM10 <- NA
+  c_data$GAS1 <- NA
+  c_data$Tgas1 <- NA
+  c_data$GAS2 <- NA
+  c_data$Temperature <- NA
+  c_data$RH <- NA
+  c_data$timestamp <- NA
+  
+  for (i in (1:ndata)){
+    payload <- fromJSON(rawToChar(base64decode(fromJSON(jreq2[[i]]$data)$data)))
+    # {"PM1":4,"PM2.5":6,"PM10":6,"GAS1":-999,"Tgas1":0,"GAS2":204,"Temperature":7.35,"RH":80.85}
+    c_data$PM1[i] <- payload[1]
+    c_data$PM2.5[i] <- payload[2]
+    c_data$PM10[i] <- payload[3]
+    c_data$GAS1[i] <- payload[4]
+    c_data$Tgas1[i] <- payload[5]
+    c_data$GAS2[i] <- payload[6]
+    c_data$Temperature[i] <- payload[7]
+    c_data$RH[i] <- payload[8]
+    c_data$timestamp[i] <- jreq2[[i]]$logged
+  }
+  if (i_dev == 1){
+    all_data <- c_data
+  } else {
+    all_data <- rbind(all_data,c_data)
+  }
+}
 
-
-c_plot <- ggplot(data = curr_data,aes(x=deviceid))+
-  geom_bar(aes(y=PM1),stat = StatIdentity) +
-  geom_text(aes(y=PM1,label=Timestamp),hjust=0, vjust=0) +
-  ylim(0,max(curr_data$PM1))
-
-c_plot
-
-
+all_data$date <- as.POSIXct(all_data$timestamp,tz="UTC")
+ggplot(data = all_data,aes(x=date)) +
+  geom_line(aes(y=PM2.5,colour=serialn))
 
