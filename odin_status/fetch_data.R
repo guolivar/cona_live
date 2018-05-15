@@ -1,10 +1,14 @@
 # Sample data ... fetch data and play
+library(tidyverse)
 library(readr)
 library(RJSONIO)
 library(curl)
 library(base64enc)
 library(ggplot2)
-
+library(proj4)
+library(maps)
+library(mapproj)
+library(ggmap)
 # Read the secrets
 secret_hologram <- read_delim("./secret_hologram.txt", 
                               "\t", escape_double = FALSE, trim_ws = TRUE)
@@ -52,6 +56,25 @@ for (i in (1:nsites)){
 
 curr_data$delay <- Sys.time() - curr_data$Timestamp
 
+# Get devices locations
+proj4string <- "+proj=tmerc +lat_0=0.0 +lon_0=173.0 +k=0.9996 +x_0=1600000.0 +y_0=10000000.0 +datum=WGS84 +units=m"
+odin_locations <- read_delim("./odin_locations.txt", 
+           "\t", escape_double = FALSE, trim_ws = TRUE)
+curr_data$lat <- NA
+curr_data$lon <- NA
+for (i in (1:nsites)){
+  loc_id <- which(substr(odin_locations$Serialn,7,11)==substr(curr_data$ODIN[i],6,9))
+  p <- project(c(odin_locations$Easting[loc_id],odin_locations$Northing[loc_id]),proj = proj4string,inverse = T)
+  curr_data$lon[i] <- p[1]
+  curr_data$lat[i] <- p[2]
+}
 
-
+centre_lat <- mean(curr_data$lat)
+centre_lon <- mean(curr_data$lon)
+cmap <- get_map(c(centre_lon,centre_lat),zoom=15)
+ggmap(cmap) +
+  geom_point(data = curr_data,
+             aes(x=lon,y=lat,colour=as.numeric(PM2.5)),
+             alpha=(1-as.numeric(curr_data$delay)/max(as.numeric(curr_data$delay))),
+             size=20)
 

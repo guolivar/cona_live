@@ -9,6 +9,17 @@
 
 library(shiny)
 
+library(tidyverse)
+library(readr)
+library(RJSONIO)
+library(curl)
+library(base64enc)
+library(ggplot2)
+library(proj4)
+library(maps)
+library(mapproj)
+library(ggmap)
+
 
 # Define UI for application that draws a histogram
 shinyUI(fluidPage(
