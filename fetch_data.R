@@ -49,6 +49,8 @@ for (i in (1:nsites)){
   curr_data$RH[i] <- payload[8]
 }
 
+curr_data$delay <- Sys.time() - curr_data$Timestamp
+
 c_plot <- ggplot(data = curr_data,aes(x=deviceid))+
   geom_bar(aes(y=PM1),stat = StatIdentity) +
   geom_text(aes(y=PM1,label=Timestamp),hjust=0, vjust=0) +

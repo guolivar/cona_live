@@ -26,7 +26,7 @@ for (i in (1:nsites)){
 }
 
 # Get the last X measurements
-nmeas <- 60*48
+nmeas <- 60*24
 base_url <- "https://dashboard.hologram.io/api/1/csr/rdm?"
 ndev <- length(devices$deviceid)
 for (i_dev in (1:ndev)){
@@ -57,7 +57,6 @@ for (i_dev in (1:ndev)){
     }
   
   ndata <- length(jreq2)
-  rm(c_data)
   c_data <- data.frame(id = (1:ndata))
   c_data$serialn <- devices$ODIN[i_dev]
   c_data$device <- devices$deviceid[i_dev]
@@ -89,6 +88,7 @@ for (i_dev in (1:ndev)){
   } else {
     all_data <- rbind(all_data,c_data)
   }
+  rm(c_data)
 }
 
 all_data$date <- as.POSIXct(all_data$timestamp,tz="UTC")
