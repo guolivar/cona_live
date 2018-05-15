@@ -4,6 +4,7 @@ library(RJSONIO)
 library(curl)
 library(base64enc)
 library(ggplot2)
+library(zoo)
 
 # Read the secrets
 secret_hologram <- read_delim("./secret_hologram.txt", 
@@ -92,5 +93,5 @@ for (i_dev in (1:ndev)){
 
 all_data$date <- as.POSIXct(all_data$timestamp,tz="UTC")
 ggplot(data = all_data,aes(x=date)) +
-  geom_line(aes(y=PM2.5,colour=serialn))
+  geom_line(aes(y=rollmean(PM2.5,60,na.pad=TRUE),colour=serialn))
 
