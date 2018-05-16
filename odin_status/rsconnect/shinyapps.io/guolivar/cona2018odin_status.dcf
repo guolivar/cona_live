@@ -5,9 +5,9 @@ account: guolivar
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 343451
-bundleId: 1376170
+bundleId: 1376577
 url: https://guolivar.shinyapps.io/cona2018odin_status/
-when: 1526444179.49305
+when: 1526467322.08338
 asMultiple: FALSE
 asStatic: FALSE
 ignoredFiles: fetch_data.R

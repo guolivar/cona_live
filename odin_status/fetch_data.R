@@ -78,8 +78,9 @@ centre_lon <- mean(curr_data$lon)
 cmap <- get_map(c(centre_lon,centre_lat),zoom=15)
 ggmap(cmap) +
   geom_point(data = curr_data,
-             aes(x=lon,y=lat,colour=as.numeric(PM2.5)),
+             aes(x=lon,y=lat,colour=PM2.5),
              alpha=curr_data$mask,
-             size=20) +
+             size=15) +
   geom_text(data=curr_data,aes(x=lon,y=lat,label=substring(ODIN,1,9))) +
-  ggtitle(paste0(Sys.time()," UTC"))
+  ggtitle(paste0(Sys.time()," UTC")) +
+  scale_colour_gradient(low="white", high="red")
