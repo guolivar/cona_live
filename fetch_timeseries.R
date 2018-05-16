@@ -26,7 +26,7 @@ for (i in (1:nsites)){
 }
 
 # Get the last X measurements
-nmeas <- 60*24
+nmeas <- 60*48
 base_url <- "https://dashboard.hologram.io/api/1/csr/rdm?"
 ndev <- length(devices$deviceid)
 for (i_dev in (1:ndev)){

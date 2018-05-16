@@ -9,7 +9,6 @@
 
 library(shiny)
 
-library(tidyverse)
 library(readr)
 library(RJSONIO)
 library(curl)
@@ -25,21 +24,9 @@ library(ggmap)
 shinyUI(fluidPage(
   
   # Application title
-  titlePanel("Old Faithful Geyser Data"),
+  titlePanel(paste0("ODIN at Alexandra")),
   
-  # Sidebar with a slider input for number of bins 
-  sidebarLayout(
-    sidebarPanel(
-       sliderInput("bins",
-                   "Number of bins:",
-                   min = 1,
-                   max = 50,
-                   value = 30)
-    ),
-    
-    # Show a plot of the generated distribution
-    mainPanel(
-       plotOutput("distPlot")
+     plotOutput("distPlot")
     )
   )
-))
+

@@ -1,5 +1,4 @@
 # Sample data ... fetch data and play
-library(tidyverse)
 library(readr)
 library(RJSONIO)
 library(curl)
@@ -55,11 +54,16 @@ for (i in (1:nsites)){
 }
 
 curr_data$delay <- Sys.time() - curr_data$Timestamp
+curr_data$mask <- 0
+for (i in (1:nsites)){
+  curr_data$mask[i] <- max(as.numeric(curr_data$delay[i] < 120),0.2)
+}
+
 
 # Get devices locations
 proj4string <- "+proj=tmerc +lat_0=0.0 +lon_0=173.0 +k=0.9996 +x_0=1600000.0 +y_0=10000000.0 +datum=WGS84 +units=m"
 odin_locations <- read_delim("./odin_locations.txt", 
-           "\t", escape_double = FALSE, trim_ws = TRUE)
+                             "\t", escape_double = FALSE, trim_ws = TRUE)
 curr_data$lat <- NA
 curr_data$lon <- NA
 for (i in (1:nsites)){
@@ -75,6 +79,7 @@ cmap <- get_map(c(centre_lon,centre_lat),zoom=15)
 ggmap(cmap) +
   geom_point(data = curr_data,
              aes(x=lon,y=lat,colour=as.numeric(PM2.5)),
-             alpha=(1-as.numeric(curr_data$delay)/max(as.numeric(curr_data$delay))),
-             size=20)
-
+             alpha=curr_data$mask,
+             size=20) +
+  geom_text(data=curr_data,aes(x=lon,y=lat,label=substring(ODIN,1,9))) +
+  ggtitle(paste0(Sys.time()," UTC"))

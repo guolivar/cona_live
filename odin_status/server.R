@@ -57,6 +57,10 @@ for (i in (1:nsites)){
 }
 
 curr_data$delay <- Sys.time() - curr_data$Timestamp
+curr_data$mask <- 0
+for (i in (1:nsites)){
+  curr_data$mask[i] <- max(as.numeric(curr_data$delay[i] < 120),0.2)
+}
 
 # Get devices locations
 proj4string <- "+proj=tmerc +lat_0=0.0 +lon_0=173.0 +k=0.9996 +x_0=1600000.0 +y_0=10000000.0 +datum=WGS84 +units=m"
@@ -76,13 +80,14 @@ centre_lon <- mean(curr_data$lon)
 
   
   output$distPlot <- renderPlot({
-    cmap <- get_map(c(centre_lon,centre_lat),zoom=15)
+    cmap <- get_map(c(centre_lon,centre_lat),zoom=15,scale = 2)
     ggmap(cmap) +
       geom_point(data = curr_data,
                  aes(x=lon,y=lat,colour=as.numeric(PM2.5)),
-                 alpha=(1-as.numeric(curr_data$delay)/max(as.numeric(curr_data$delay))),
-                 size=20) +
-      geom_text(data=curr_data,aes(x=lon,y=lat,label=ODIN))
+                 alpha=curr_data$mask,
+                 size=10) +
+      geom_text(data=curr_data,aes(x=lon,y=lat,label=substring(ODIN,1,9))) +
+      ggtitle(paste0(Sys.time()," UTC"))
     
   })
   
