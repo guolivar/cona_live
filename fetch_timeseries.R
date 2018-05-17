@@ -63,6 +63,7 @@ for (i_dev in (1:ndev)){
   c_data$PM1 <- NA
   c_data$PM2.5 <- NA
   c_data$PM10 <- NA
+  c_data$PMc <- NA
   c_data$GAS1 <- NA
   c_data$Tgas1 <- NA
   c_data$GAS2 <- NA
@@ -76,6 +77,7 @@ for (i_dev in (1:ndev)){
     c_data$PM1[i] <- payload[1]
     c_data$PM2.5[i] <- payload[2]
     c_data$PM10[i] <- payload[3]
+    c_data$PMc[i] <- payload[3] - payload[2]
     c_data$GAS1[i] <- payload[4]
     c_data$Tgas1[i] <- payload[5]
     c_data$GAS2[i] <- payload[6]

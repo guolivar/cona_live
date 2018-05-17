@@ -43,7 +43,6 @@ for (i in (1:nsites)){
   built_url <- paste0(base_url,
                       "deviceid=",curr_data$deviceid[i],"&",
                       "limit=1&",
-                      "orgid=",secret_hologram$orgid,"&",
                       "apikey=",secret_hologram$apikey)
   req2 <- curl_fetch_memory(built_url)
   jreq2 <- fromJSON(rawToChar(req2$content))$data
