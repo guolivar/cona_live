@@ -1,4 +1,5 @@
 # Fetch data and create spatial summaries
+library(spatstat)
 library(readr)
 library(RJSONIO)
 library(curl)
@@ -8,6 +9,8 @@ library(zoo)
 library(openair)
 library(sp)
 library(raster)
+library(proj4)
+
 
 # Read the secrets
 secret_hologram <- read_delim("./secret_hologram.txt", 
@@ -35,10 +38,10 @@ odin_locations <- read_delim("./odin_locations.txt",
 devices$lat <- NA
 devices$lon <- NA
 for (i in (1:nsites)){
-  loc_id <- which(substr(odin_locations$Serialn,7,11)==substr(curr_data$ODIN[i],6,9))
+  loc_id <- which(substr(odin_locations$Serialn,7,11)==substr(devices$ODIN[i],6,9))
   p <- project(c(odin_locations$Easting[loc_id],odin_locations$Northing[loc_id]),proj = proj4string,inverse = T)
-  devices$y <- odin_locations$Northing[loc_id]
-  devices$x <- odin_locations$Easting[loc_id]
+  devices$y[i] <- odin_locations$Northing[loc_id]
+  devices$x[i] <- odin_locations$Easting[loc_id]
   devices$lon[i] <- p[1]
   devices$lat[i] <- p[2]
 }
@@ -169,11 +172,9 @@ proj4string(all_data.10min) <- CRS('+init=epsg:2193')
 coordinates(all_data) <- ~ x + y
 proj4string(all_data) <- CRS('+init=epsg:2193')
 
-ggplot(data = subset(all_data,date > as.POSIXct("2018-05-16 00:00:00",tz="UTC")),aes(x=date)) +
-  geom_line(aes(y=rollmean(PM2.5,60,fill = NA),colour=serialn))
 
 #Setting the  prediction grid properties
-cellsize <- 100 #pixel size in projection units (NZTM, i.e. metres)
+cellsize <- 50 #pixel size in projection units (NZTM, i.e. metres)
 min_x <- all_data.10min@bbox[1,1] - cellsize#minimun x coordinate
 min_y <- all_data.10min@bbox[2,1] - cellsize #minimun y coordinate
 max_x <- all_data.10min@bbox[1,2] + cellsize #mximum x coordinate
