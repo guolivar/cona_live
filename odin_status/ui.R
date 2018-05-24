@@ -21,12 +21,14 @@ library(ggmap)
 
 
 # Define UI for application that draws a histogram
-shinyUI(fluidPage(
-  
-  # Application title
-  titlePanel(paste0("ODIN at Alexandra")),
-  
-     plotOutput("distPlot")
-    )
+pageWithSidebar(
+  headerPanel('Summary of ODIN'),
+  sidebarPanel('Non-working ODIN',
+    DT::dataTableOutput("table")
+  ),
+  mainPanel(
+    plotOutput('plot1')
   )
+)
+
 
