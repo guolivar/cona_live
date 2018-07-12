@@ -9,85 +9,193 @@ library(rgdal)
 library(ggmap)
 library(gstat)
 library(ncdf4)
+library(RJSONIO)
+library(curl)
+library(base64enc)
+library(zoo)
+library(openair)
+library(stringi)
+
+
 ##### Set the working directory DB ####
-setwd("~/repositories/cona/DB")
-##### Read the credentials file (hidden) ####
-access <- read.delim("./.cona_login", stringsAsFactors = FALSE)
-##### Open the connection to the DB ####
-p <- dbDriver("PostgreSQL")
-con<-dbConnect(p,
-               user=access$usr[2],
-               password=access$pwd[2],
-               host='localhost',
-               dbname='cona',
-               port=5432)
+setwd("~/repositories/cona_live/mapping/")
+##### Read the credentials file (ignored by GIT repository) ####
+secret_hologram <- read_delim("./secret_hologram.txt", 
+                              "\t", escape_double = FALSE, trim_ws = TRUE)
+
 ##### Moving Average function ####
 ma <- function(x,n=5){filter(x,rep(1/n,n), sides=1)}
 ##### Get data ####
-# Select average for an hour/day at all locations and then krig the result
-data <- dbGetQuery(con,"SELECT
-                   (fs.id) as siteid,
-                   i.serialn,
-                   avg(d.value::numeric) as pm25,
-                   max(ST_X(ST_TRANSFORM(fs.geom::geometry,2193))) as x,
-                   max(ST_Y(ST_TRANSFORM(fs.geom::geometry,2193))) as y,
-                   date_trunc('minute',d.recordtime at time zone 'NZST') as date
-                   FROM
-                   data.fixed_data as d,
-                   admin.sensor as s,
-                   admin.instrument as i,
-                   admin.fixedsites as fs
-                   WHERE
-                   s.id = d.sensorid AND
-                   s.instrumentid = i.id AND
-                   fs.id = d.siteid AND
-                   i.name = 'ODIN-SD-3' AND
-                   s.name = 'PM2.5' AND
-                   (d.recordtime at time zone 'NZST') >= timestamp '2017-06-20 12:00:00' AND
-                   (d.recordtime at time zone 'NZST') <= timestamp '2017-08-31 16:00:00' AND
-                   ST_WITHIN(fs.geom::geometry, ST_BUFFER((select x.geom::geometry from admin.fixedsites as x where x.id=18),0.05))
-                   GROUP BY
-                   date_trunc('minute',d.recordtime at time zone 'NZST'),
-                   i.serialn,
-                   fs.id;")
-dbDisconnect(con)
 
-
-
-# Turn into a 60min running average
-serialn <- unique(data$serialn)
-data$pm2.5 <- data$pm25
-for (sn in serialn){
-  # Subset the data to have only 1 sensor
-  indices <- which(data$serialn==sn)
-  sensordata <- data[indices,]
-  # Moving average
-  sensordata$pm2.5 <- ma(sensordata$pm25,60)
-  data$pm2.5[indices] <- sensordata$pm2.5
+# Get the devices ID
+base_url <- "https://dashboard.hologram.io/api/1/devices?"
+tag <- "cona2018"
+built_url <- paste0(base_url,
+                    "orgid=",secret_hologram$orgid,"&",
+                    "tagname=",tag,"&",
+                    "apikey=",secret_hologram$apikey)
+req1 <- curl_fetch_memory(built_url)
+jreq1 <- fromJSON(rawToChar(req1$content))$data
+nsites <- length(jreq1)
+curr_data <- data.frame(deviceid = (1:nsites),ODIN = NA)
+for (i in (1:nsites)){
+  curr_data$deviceid[i] <- jreq1[[i]]$id
+  curr_data$ODIN[i] <- jreq1[[i]]$name
 }
 
-# Re-sample every 10 minutes
-data.10m <- subset(data,as.numeric(format(data$date,'%M')) %in% c(0,10,20,30,40,50))
-# Use only data from deployed period ... started at
-data.10m <- subset(data.10m,date>as.POSIXct('2017-06-21 04:00:00'))
+# Get the latest measurements
+base_url <- "https://dashboard.hologram.io/api/1/csr/rdm?"
+curr_data$PM1 <- NA
+curr_data$PM2.5 <- NA
+curr_data$PM10 <- NA
+curr_data$Temperature <- NA
+curr_data$RH <- NA
+curr_data$Timestamp <- as.POSIXct("2018-05-01 00:00:00",tz='UTC')
+i <- 1
+for (i in (1:nsites)){
+  built_url <- paste0(base_url,
+                      "deviceid=",curr_data$deviceid[i],"&",
+                      "limit=1&",
+                      "apikey=",secret_hologram$apikey)
+  req2 <- curl_fetch_memory(built_url)
+  jreq2 <- fromJSON(rawToChar(req2$content))$data
+  xxx <- rawToChar(base64decode(fromJSON(jreq2[[1]]$data)$data))
+  x_payload <- try(fromJSON(paste0(stri_split_fixed(xxx,",\"recordtime")[[1]][1],"}")),silent = TRUE)
+  if (inherits(x_payload,"try-error")) {
+    next
+  }
+  
+  payload <- unlist(x_payload)
+  if (length(payload)<5){
+    next
+  }
+  
+  curr_data$Timestamp[i] <- as.POSIXct(jreq2[[1]]$logged,format = "%Y-%m-%d %H:%M:%OS",tz="UTC")
+  curr_data$PM1[i] <- as.numeric(payload[1])
+  curr_data$PM2.5[i] <- as.numeric(payload[2])
+  curr_data$PM10[i] <- as.numeric(payload[3])
+  curr_data$Temperature[i] <- as.numeric(payload[7])
+  curr_data$RH[i] <- as.numeric(payload[8])
+}
 
+curr_data$delay <- floor(difftime(Sys.time(),curr_data$Timestamp, units = 'secs'))
+curr_data$mask <- 0
+for (i in (1:nsites)){
+  curr_data$mask[i] <- max(as.numeric(curr_data$delay[i] < 120),0.2)
+}
 
-save(list = c('data', 'data.10m'),file = '/data/data_gustavo/cona/odin_June2017_2.RData')
-write_tsv(x = data,path =  '/data/data_gustavo/cona/odin_June2017.txt')
-write_tsv(x = data.10m,path =  '/data/data_gustavo/cona/odin_June2017_10min.txt')
-coordinates(data.10m) <- ~ x + y
-coordinates(data) <- ~ x + y
-proj4string(data.10m) <- CRS('+init=epsg:2193')
-proj4string(data) <- CRS('+init=epsg:2193')
+# Get devices locations
+proj4string <- "+proj=tmerc +lat_0=0.0 +lon_0=173.0 +k=0.9996 +x_0=1600000.0 +y_0=10000000.0 +datum=WGS84 +units=m"
+odin_locations <- read_delim("./odin_locations.txt", 
+                             "\t", escape_double = FALSE, trim_ws = TRUE)
+curr_data$lat <- NA
+curr_data$lon <- NA
+for (i in (1:nsites)){
+  loc_id <- which(substr(odin_locations$Serialn,7,11)==substr(curr_data$ODIN[i],6,9))
+  p <- project(cbind(odin_locations$Easting[loc_id],odin_locations$Northing[loc_id]),proj = proj4string,inv = TRUE)
+  curr_data$lon[i] <- p[1]
+  curr_data$lat[i] <- p[2]
+}
+
+centre_lat <- mean(curr_data$lat)
+centre_lon <- mean(curr_data$lon)
+
+# Now get datafor last 12 hours and calculate average for mapping
+# Cycle through each deviceID and calculate the 12hr average up to now
+curr_data$PM1 <- NA
+curr_data$PM2.5 <- NA
+curr_data$PM10 <- NA
+curr_data$Temperature <- NA
+curr_data$RH <- NA
+max_nmeas <- 60*12
+ndev <- length(curr_data$deviceid)
+# t_start is 12 hours before now
+t_start <- floor(as.numeric(Sys.time()-12*3600))
+
+base_url <- "https://dashboard.hologram.io/api/1/csr/rdm?"
+for (i_dev in (1:ndev)){
+  built_url <- paste0(base_url,
+                      "deviceid=",curr_data$deviceid[i_dev],"&",
+                      "limit=",max_nmeas,"&",
+                      "timestart=",t_start,"&",
+                      "orgid=",secret_hologram$orgid,"&",
+                      "apikey=",secret_hologram$apikey)
+  req2 <- curl_fetch_memory(built_url)
+  jreq2 <- fromJSON(rawToChar(req2$content))$data
+  
+  ndata <- length(jreq2)
+  c_data <- data.frame(id = (1:ndata))
+  c_data$PM1 <- NA
+  c_data$PM2.5 <- NA
+  c_data$PM10 <- NA
+  c_data$PMc <- NA
+  c_data$GAS1 <- NA
+  c_data$Tgas1 <- NA
+  c_data$GAS2 <- NA
+  c_data$Temperature <- NA
+  c_data$RH <- NA
+  c_data$date <- as.POSIXct("2018-05-01 00:00:00",tz='UTC')
+  c_data$lat <- curr_data$lat[i_dev]
+  c_data$lon <- curr_data$lon[i_dev]
+  c_data$siteid <- i_dev
+  if (ndata < 1){
+    next
+  }
+  for (i in (1:ndata)){
+    xxx <- rawToChar(base64decode(fromJSON(jreq2[[i]]$data)$data))
+    x_payload <- try(fromJSON(paste0(stri_split_fixed(xxx,",\"recordtime")[[1]][1],"}")),silent = TRUE)
+    if (inherits(x_payload,"try-error")) {
+      next
+    }
+    
+    payload <- unlist(x_payload)
+    if (length(payload)<5){
+      next
+    }
+    # {"PM1":4,"PM2.5":6,"PM10":6,"GAS1":-999,"Tgas1":0,"GAS2":204,"Temperature":7.35,"RH":80.85}
+    c_data$PM1[i] <- as.numeric(payload[1])
+    c_data$PM2.5[i] <- as.numeric(payload[2])
+    c_data$PM10[i] <- as.numeric(payload[3])
+    c_data$PMc[i] <- as.numeric(payload[3]) - as.numeric(payload[2])
+    c_data$GAS1[i] <- payload[4]
+    c_data$Tgas1[i] <- payload[5]
+    c_data$GAS2[i] <- payload[6]
+    c_data$Temperature[i] <- payload[7]
+    c_data$RH[i] <- payload[8]
+    c_data$date[i] <- as.POSIXct(jreq2[[i]]$logged,format = "%Y-%m-%d %H:%M:%OS",tz="UTC")
+  }
+  
+  if (i_dev == 1){
+    all_data <- c_data
+    all_data.10min <- timeAverage(c_data,avg.time = '10 min')
+  } else {
+    all_data <- rbind(all_data,c_data)
+    all_data.10min <- rbind(all_data.10min,timeAverage(c_data,avg.time = '10 min'))
+  }
+  curr_data$PM1[i_dev] <- mean(c_data$PM1,na.rm = TRUE)
+  curr_data$PM2.5[i_dev] <- mean(c_data$PM2.5,na.rm = TRUE)
+  curr_data$PM10[i_dev] <- mean(c_data$PM10,na.rm = TRUE)
+  curr_data$Temperature[i_dev] <- mean(c_data$Temperature,na.rm = TRUE)
+  curr_data$RH[i_dev] <- mean(c_data$RH,na.rm = TRUE)
+  rm(c_data)
+}
+curr_data$Last_reading <- curr_data$Timestamp
+curr_data$mask <- as.numeric(curr_data$delay < 120)
+reboot_odins <- subset(curr_data,mask == 0)
+
+coordinates(all_data.10min) <- ~ lon + lat
+proj4string(all_data.10min) <- CRS('+init=epsg:4326')
+# Re-project to NZTM
+spTransform(all_data.10min,CRS('+init=epsg:2193'))
 
 print("Starting the kriging")
 
 #Setting the  prediction grid properties
 cellsize <- 100 #pixel size in projection units (NZTM, i.e. metres)
-min_x <- data.10m@bbox[1,1] - cellsize#minimun x coordinate
-min_y <- data.10m@bbox[2,1] - cellsize #minimun y coordinate
-max_x <- data.10m@bbox[1,2] + cellsize #mximum x coordinate
-max_y <- data.10m@bbox[2,2] + cellsize #maximum y coordinate
+min_x <- all_data.10min@bbox[1,1] - cellsize#minimun x coordinate
+min_y <- all_data.10min@bbox[2,1] - cellsize #minimun y coordinate
+max_x <- all_data.10min@bbox[1,2] + cellsize #mximum x coordinate
+max_y <- all_data.10min@bbox[2,2] + cellsize #maximum y coordinate
 
 x_length <- max_x - min_x #easting amplitude
 y_length <- max_y - min_y #northing amplitude
@@ -104,7 +212,7 @@ grid <- SpatialPixelsDataFrame(grid,
 
 
 
-all_dates <- sort(unique(data.10m$date))
+all_dates <- sort(unique(all_data.10min$date))
 ndates <- length(all_dates)
 breaks <- as.numeric(quantile((1:ndates),c(0,0.2,0.4,0.6,0.8,1), type = 1))
 nbreaks <- length(breaks)
@@ -119,7 +227,7 @@ for (j in (1:(nbreaks-1))){
     j2 <- breaks[j+1]
   }
   for (d_slice in (j1:j2)){
-    c_data <- subset(data.10m,subset = (date==all_dates[d_slice]))
+    c_data <- subset(all_data.10min,subset = (date==all_dates[d_slice]))
     
     if (length(unique(c_data$siteid))<4){
       next

@@ -12,7 +12,7 @@ secret_hologram <- read_delim("./secret_hologram.txt",
                               "\t", escape_double = FALSE, trim_ws = TRUE)
 # Get the devices ID
 base_url <- "https://dashboard.hologram.io/api/1/devices?"
-tag <- "cona2018"
+tag <- "development"
 built_url <- paste0(base_url,
                     "orgid=",secret_hologram$orgid,"&",
                     "tagname=",tag,"&",

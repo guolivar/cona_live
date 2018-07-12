@@ -18,6 +18,8 @@ library(proj4)
 library(maps)
 library(mapproj)
 library(ggmap)
+library(stringi)
+
 
 
 # Define UI for application that draws a histogram

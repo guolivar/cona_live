@@ -46,16 +46,26 @@ for (i in (1:nsites)){
                       "apikey=",secret_hologram$apikey)
   req2 <- curl_fetch_memory(built_url)
   jreq2 <- fromJSON(rawToChar(req2$content))$data
-  payload <- fromJSON(rawToChar(base64decode(fromJSON(jreq2[[1]]$data)$data)))
+  xxx <- rawToChar(base64decode(fromJSON(jreq2[[1]]$data)$data))
+  x_payload <- try(fromJSON(paste0(stri_split_fixed(xxx,",\"recordtime")[[1]][1],"}")),silent = TRUE)
+  if (inherits(x_payload,"try-error")) {
+    next
+  }
+  
+  payload <- unlist(x_payload)
+  if (length(payload)<5){
+    next
+  }
+
   curr_data$Timestamp[i] <- as.POSIXct(jreq2[[1]]$logged,tz='UTC')
-  curr_data$PM1[i] <- payload[1]
-  curr_data$PM2.5[i] <- payload[2]
-  curr_data$PM10[i] <- payload[3]
-  curr_data$Temperature[i] <- payload[7]
-  curr_data$RH[i] <- payload[8]
+  curr_data$PM1[i] <- as.numeric(payload[1])
+  curr_data$PM2.5[i] <- as.numeric(payload[2])
+  curr_data$PM10[i] <- as.numeric(payload[3])
+  curr_data$Temperature[i] <- as.numeric(payload[7])
+  curr_data$RH[i] <- as.numeric(payload[8])
 }
 
-curr_data$delay <- Sys.time() - curr_data$Timestamp
+curr_data$delay <- floor(difftime(Sys.time(),curr_data$Timestamp, units = 'secs'))
 curr_data$mask <- 0
 for (i in (1:nsites)){
   curr_data$mask[i] <- max(as.numeric(curr_data$delay[i] < 120),0.2)
@@ -116,12 +126,21 @@ for (i_dev in (1:ndev)){
     next
   }
   for (i in (1:ndata)){
-    payload <- fromJSON(rawToChar(base64decode(fromJSON(jreq2[[i]]$data)$data)))
+    xxx <- rawToChar(base64decode(fromJSON(jreq2[[i]]$data)$data))
+    x_payload <- try(fromJSON(paste0(stri_split_fixed(xxx,",\"recordtime")[[1]][1],"}")),silent = TRUE)
+    if (inherits(x_payload,"try-error")) {
+      next
+    }
+    
+    payload <- unlist(x_payload)
+    if (length(payload)<5){
+      next
+    }
     # {"PM1":4,"PM2.5":6,"PM10":6,"GAS1":-999,"Tgas1":0,"GAS2":204,"Temperature":7.35,"RH":80.85}
-    c_data$PM1[i] <- payload[1]
-    c_data$PM2.5[i] <- payload[2]
-    c_data$PM10[i] <- payload[3]
-    c_data$PMc[i] <- payload[3] - payload[2]
+    c_data$PM1[i] <- as.numeric(payload[1])
+    c_data$PM2.5[i] <- as.numeric(payload[2])
+    c_data$PM10[i] <- as.numeric(payload[3])
+    c_data$PMc[i] <- as.numeric(payload[3]) - as.numeric(payload[2])
     c_data$GAS1[i] <- payload[4]
     c_data$Tgas1[i] <- payload[5]
     c_data$GAS2[i] <- payload[6]
