@@ -109,62 +109,89 @@ curr_data$Temperature <- NA
 curr_data$RH <- NA
 max_nmeas <- 60*12
 ndev <- length(curr_data$deviceid)
-# t_start is 12 hours before now
-t_start <- floor(as.numeric(Sys.time()-12*3600))
+
+# UTC time start
+t_start <- as.numeric(as.POSIXct("2018/07/05 00:00:00"))
+# UTC time start
+t_end <- as.numeric(as.POSIXct("2018/07/08 00:00:00"))
 
 base_url <- "https://dashboard.hologram.io/api/1/csr/rdm?"
 for (i_dev in (1:ndev)){
-  built_url <- paste0(base_url,
-                      "deviceid=",curr_data$deviceid[i_dev],"&",
-                      "limit=",max_nmeas,"&",
-                      "timestart=",t_start,"&",
-                      "orgid=",secret_hologram$orgid,"&",
-                      "apikey=",secret_hologram$apikey)
-  req2 <- curl_fetch_memory(built_url)
-  jreq2 <- fromJSON(rawToChar(req2$content))$data
-  
-  ndata <- length(jreq2)
-  c_data <- data.frame(id = (1:ndata))
-  c_data$PM1 <- NA
-  c_data$PM2.5 <- NA
-  c_data$PM10 <- NA
-  c_data$PMc <- NA
-  c_data$GAS1 <- NA
-  c_data$Tgas1 <- NA
-  c_data$GAS2 <- NA
-  c_data$Temperature <- NA
-  c_data$RH <- NA
-  c_data$date <- as.POSIXct("2018-05-01 00:00:00",tz='UTC')
-  c_data$lat <- curr_data$lat[i_dev]
-  c_data$lon <- curr_data$lon[i_dev]
-  c_data$siteid <- i_dev
-  if (ndata < 1){
+  ndata <- 1
+  nstep <- 1
+  while (ndata >= 1){
+    if (nstep == 1){
+      built_url <- paste0(base_url,
+                          "deviceid=",curr_data$deviceid[i_dev],"&",
+                          "timestart=",t_start,"&",
+                          "timeend=",t_end,"&",
+                          "limit=1000&",
+                          "orgid=",secret_hologram$orgid,"&",
+                          "apikey=",secret_hologram$apikey)
+    } else {
+      built_url <- paste0(base_url,
+                          "deviceid=",curr_data$deviceid[i_dev],"&",
+                          "timestart=",t_start,"&",
+                          "timeend=",t_end,"&",
+                          "limit=1000&",
+                          "startat=",startat,"&",
+                          "orgid=",secret_hologram$orgid,"&",
+                          "apikey=",secret_hologram$apikey)
+    }
+    req2 <- curl_fetch_memory(built_url)
+    jreq2 <- fromJSON(rawToChar(req2$content))$data
+    ndata <- length(jreq2)
+    if (ndata < 1){
+      next
+    }
+    startat <- jreq2[[ndata]]$id
+    nstep <- nstep + 1
+    
+    c_data <- data.frame(id = (1:ndata))
+    c_data$PM1 <- NA
+    c_data$PM2.5 <- NA
+    c_data$PM10 <- NA
+    c_data$PMc <- NA
+    c_data$GAS1 <- NA
+    c_data$Tgas1 <- NA
+    c_data$GAS2 <- NA
+    c_data$Temperature <- NA
+    c_data$RH <- NA
+    c_data$date <- as.POSIXct("2018-05-01 00:00:00",tz='UTC')
+    c_data$timestamp <- c_data$date
+    c_data$lat <- curr_data$lat[i_dev]
+    c_data$lon <- curr_data$lon[i_dev]
+    c_data$siteid <- curr_data$ODIN[i_dev]
+
+    for (i in (1:ndata)){
+      xxx <- rawToChar(base64decode(fromJSON(jreq2[[i]]$data)$data))
+      x_payload <- try(fromJSON(xxx),silent = TRUE)
+      if (inherits(x_payload,"try-error")) {
+        next
+      }
+      
+      payload <- unlist(x_payload)
+      if (length(payload)<5){
+        next
+      }
+      # {"PM1":4,"PM2.5":6,"PM10":6,"GAS1":-999,"Tgas1":0,"GAS2":204,"Temperature":7.35,"RH":80.85,"recordtime":"2018/07/11;00:21:01"}
+      c_data$PM1[i] <- as.numeric(payload[1])
+      c_data$PM2.5[i] <- as.numeric(payload[2])
+      c_data$PM10[i] <- as.numeric(payload[3])
+      c_data$PMc[i] <- as.numeric(payload[3]) - as.numeric(payload[2])
+      c_data$GAS1[i] <- payload[4]
+      c_data$Tgas1[i] <- payload[5]
+      c_data$GAS2[i] <- payload[6]
+      c_data$Temperature[i] <- payload[7]
+      c_data$RH[i] <- payload[8]
+      c_data$date[i] <- as.POSIXct(as.character(payload[9]),format = "%Y/%m/%d;%H:%M:%S",tz="UTC")
+      c_data$timestamp[i] <- as.POSIXct(jreq2[[i]]$logged,format = "%Y-%m-%d %H:%M:%OS",tz="UTC")
+    }
+  }
+  has_data <- try(length(c_data$PM1),silent = TRUE)
+  if (inherits(has_data,"try-error")) {
     next
   }
-  for (i in (1:ndata)){
-    xxx <- rawToChar(base64decode(fromJSON(jreq2[[i]]$data)$data))
-    x_payload <- try(fromJSON(paste0(stri_split_fixed(xxx,",\"recordtime")[[1]][1],"}")),silent = TRUE)
-    if (inherits(x_payload,"try-error")) {
-      next
-    }
-    
-    payload <- unlist(x_payload)
-    if (length(payload)<5){
-      next
-    }
-    # {"PM1":4,"PM2.5":6,"PM10":6,"GAS1":-999,"Tgas1":0,"GAS2":204,"Temperature":7.35,"RH":80.85}
-    c_data$PM1[i] <- as.numeric(payload[1])
-    c_data$PM2.5[i] <- as.numeric(payload[2])
-    c_data$PM10[i] <- as.numeric(payload[3])
-    c_data$PMc[i] <- as.numeric(payload[3]) - as.numeric(payload[2])
-    c_data$GAS1[i] <- payload[4]
-    c_data$Tgas1[i] <- payload[5]
-    c_data$GAS2[i] <- payload[6]
-    c_data$Temperature[i] <- payload[7]
-    c_data$RH[i] <- payload[8]
-    c_data$date[i] <- as.POSIXct(jreq2[[i]]$logged,format = "%Y-%m-%d %H:%M:%OS",tz="UTC")
-  }
-  
   if (i_dev == 1){
     all_data <- c_data
     all_data.10min <- timeAverage(c_data,avg.time = '10 min')
@@ -182,6 +209,9 @@ for (i_dev in (1:ndev)){
 curr_data$Last_reading <- curr_data$Timestamp
 curr_data$mask <- as.numeric(curr_data$delay < 120)
 reboot_odins <- subset(curr_data,mask == 0)
+
+timePlot(subset(all_data,siteid == "ODIN-0030 (90382)"),pollutant = c('PM2.5','PM10'),avg.time = '10 min',group = TRUE)
+
 
 coordinates(all_data.10min) <- ~ lon + lat
 proj4string(all_data.10min) <- CRS('+init=epsg:4326')
@@ -214,7 +244,7 @@ grid <- SpatialPixelsDataFrame(grid,
 
 all_dates <- sort(unique(all_data.10min$date))
 ndates <- length(all_dates)
-breaks <- as.numeric(quantile((1:ndates),c(0,0.2,0.4,0.6,0.8,1), type = 1))
+breaks <- as.numeric(quantile((1:ndates),c(0,0.5,1), type = 1))
 nbreaks <- length(breaks)
 fidx <- 1
 for (j in (1:(nbreaks-1))){
