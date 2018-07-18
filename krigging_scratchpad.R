@@ -23,8 +23,6 @@ setwd("~/repositories/cona_live/mapping/")
 secret_hologram <- read_delim("./secret_hologram.txt", 
                               "\t", escape_double = FALSE, trim_ws = TRUE)
 
-##### Moving Average function ####
-ma <- function(x,n=5){filter(x,rep(1/n,n), sides=1)}
 ##### Get data ####
 
 # Get the devices ID
@@ -111,14 +109,15 @@ max_nmeas <- 60*12
 ndev <- length(curr_data$deviceid)
 
 # UTC time start
-t_start <- as.numeric(as.POSIXct("2018/07/05 00:00:00"))
+t_start <- as.numeric(as.POSIXct("2018/07/17 16:00:00",tz = "GMT-12"))
 # UTC time start
-t_end <- as.numeric(as.POSIXct("2018/07/08 00:00:00"))
+t_end <- as.numeric(as.POSIXct("2018/07/18 07:00:00",tz = "GMT-12"))
 
 base_url <- "https://dashboard.hologram.io/api/1/csr/rdm?"
 for (i_dev in (1:ndev)){
   ndata <- 1
   nstep <- 1
+  print("Getting data")
   while (ndata >= 1){
     if (nstep == 1){
       built_url <- paste0(base_url,
@@ -128,6 +127,9 @@ for (i_dev in (1:ndev)){
                           "limit=1000&",
                           "orgid=",secret_hologram$orgid,"&",
                           "apikey=",secret_hologram$apikey)
+      req2 <- curl_fetch_memory(built_url)
+      jreq2_tmp <- fromJSON(rawToChar(req2$content))$data
+      jreq2 <- jreq2_tmp
     } else {
       built_url <- paste0(base_url,
                           "deviceid=",curr_data$deviceid[i_dev],"&",
@@ -137,67 +139,88 @@ for (i_dev in (1:ndev)){
                           "startat=",startat,"&",
                           "orgid=",secret_hologram$orgid,"&",
                           "apikey=",secret_hologram$apikey)
+      req2 <- curl_fetch_memory(built_url)
+      jreq2_tmp <- fromJSON(rawToChar(req2$content))$data
+      jreq2 <- append(jreq2,fromJSON(rawToChar(req2$content))$data)
     }
-    req2 <- curl_fetch_memory(built_url)
-    jreq2 <- fromJSON(rawToChar(req2$content))$data
-    ndata <- length(jreq2)
+    
+    ndata <- length(jreq2_tmp)
     if (ndata < 1){
+      break
+    }
+    startat <- jreq2_tmp[[ndata]]$id
+    nstep <- nstep + 1
+  }
+  
+  #print(jreq2[[ndata]]$data)
+  ndata <- length(jreq2)
+  print("Got data")
+  print(ndata)
+  if (ndata < 1){
+    # This device didn't have data for this period
+    next
+  }
+  c_data <- data.frame(id = (1:ndata))
+  c_data$PM1 <- NA
+  c_data$PM2.5 <- NA
+  c_data$PM10 <- NA
+  c_data$PMc <- NA
+  c_data$GAS1 <- NA
+  c_data$Tgas1 <- NA
+  c_data$GAS2 <- NA
+  c_data$Temperature <- NA
+  c_data$RH <- NA
+  c_data$date <- as.POSIXct(jreq2[[ndata]]$logged,format = "%Y-%m-%d %H:%M:%OS",tz="UTC")
+  c_data$timestamp <- c_data$date
+  c_data$lat <- curr_data$lat[i_dev]
+  c_data$lon <- curr_data$lon[i_dev]
+  c_data$serialn <- curr_data$ODIN[i_dev]
+  
+  for (i in (1:ndata)){
+    xxx <- rawToChar(base64decode(fromJSON(jreq2[[i]]$data)$data))
+    x_payload <- try(fromJSON(xxx),silent = TRUE)
+    if (inherits(x_payload,"try-error")) {
       next
     }
-    startat <- jreq2[[ndata]]$id
-    nstep <- nstep + 1
     
-    c_data <- data.frame(id = (1:ndata))
-    c_data$PM1 <- NA
-    c_data$PM2.5 <- NA
-    c_data$PM10 <- NA
-    c_data$PMc <- NA
-    c_data$GAS1 <- NA
-    c_data$Tgas1 <- NA
-    c_data$GAS2 <- NA
-    c_data$Temperature <- NA
-    c_data$RH <- NA
-    c_data$date <- as.POSIXct("2018-05-01 00:00:00",tz='UTC')
-    c_data$timestamp <- c_data$date
-    c_data$lat <- curr_data$lat[i_dev]
-    c_data$lon <- curr_data$lon[i_dev]
-    c_data$siteid <- curr_data$ODIN[i_dev]
-
-    for (i in (1:ndata)){
-      xxx <- rawToChar(base64decode(fromJSON(jreq2[[i]]$data)$data))
-      x_payload <- try(fromJSON(xxx),silent = TRUE)
-      if (inherits(x_payload,"try-error")) {
-        next
-      }
-      
-      payload <- unlist(x_payload)
-      if (length(payload)<5){
-        next
-      }
-      # {"PM1":4,"PM2.5":6,"PM10":6,"GAS1":-999,"Tgas1":0,"GAS2":204,"Temperature":7.35,"RH":80.85,"recordtime":"2018/07/11;00:21:01"}
-      c_data$PM1[i] <- as.numeric(payload[1])
-      c_data$PM2.5[i] <- as.numeric(payload[2])
-      c_data$PM10[i] <- as.numeric(payload[3])
-      c_data$PMc[i] <- as.numeric(payload[3]) - as.numeric(payload[2])
-      c_data$GAS1[i] <- payload[4]
-      c_data$Tgas1[i] <- payload[5]
-      c_data$GAS2[i] <- payload[6]
-      c_data$Temperature[i] <- payload[7]
-      c_data$RH[i] <- payload[8]
-      c_data$date[i] <- as.POSIXct(as.character(payload[9]),format = "%Y/%m/%d;%H:%M:%S",tz="UTC")
-      c_data$timestamp[i] <- as.POSIXct(jreq2[[i]]$logged,format = "%Y-%m-%d %H:%M:%OS",tz="UTC")
+    payload <- unlist(x_payload)
+    if (length(payload)<5){
+      next
     }
+    # {"PM1":4,"PM2.5":6,"PM10":6,"GAS1":-999,"Tgas1":0,"GAS2":204,"Temperature":7.35,"RH":80.85,"recordtime":"2018/07/11;00:21:01"}
+    c_data$PM1[i] <- as.numeric(payload[1])
+    c_data$PM2.5[i] <- as.numeric(payload[2])
+    c_data$PM10[i] <- as.numeric(payload[3])
+    c_data$PMc[i] <- as.numeric(payload[3]) - as.numeric(payload[2])
+    c_data$GAS1[i] <- as.numeric(payload[4])
+    c_data$Tgas1[i] <- as.numeric(payload[5])
+    c_data$GAS2[i] <- as.numeric(payload[6])
+    c_data$Temperature[i] <- as.numeric(payload[7])
+    c_data$RH[i] <- as.numeric(payload[8])
+    c_data$date[i] <- as.POSIXct(as.character(payload[9]),format = "%Y/%m/%d;%H:%M:%S",tz="UTC")
+    c_data$timestamp[i] <- as.POSIXct(jreq2[[i]]$logged,format = "%Y-%m-%d %H:%M:%OS",tz="UTC")
   }
+  
   has_data <- try(length(c_data$PM1),silent = TRUE)
   if (inherits(has_data,"try-error")) {
     next
   }
+  print(min(c_data$timestamp))
+  print(max(c_data$timestamp))
+  
   if (i_dev == 1){
     all_data <- c_data
     all_data.10min <- timeAverage(c_data,avg.time = '10 min')
+    all_data.10min$serialn <- curr_data$ODIN[i_dev]
+    all_data.10min$lat <- curr_data$lat[i_dev]
+    all_data.10min$lon <- curr_data$lon[i_dev]
   } else {
     all_data <- rbind(all_data,c_data)
-    all_data.10min <- rbind(all_data.10min,timeAverage(c_data,avg.time = '10 min'))
+    tmp10min <- timeAverage(c_data,avg.time = '10 min')
+    tmp10min$serialn <- curr_data$ODIN[i_dev]
+    tmp10min$lat <- curr_data$lat[i_dev]
+    tmp10min$lon <- curr_data$lon[i_dev]
+    all_data.10min <- rbind(all_data.10min,tmp10min)
   }
   curr_data$PM1[i_dev] <- mean(c_data$PM1,na.rm = TRUE)
   curr_data$PM2.5[i_dev] <- mean(c_data$PM2.5,na.rm = TRUE)
@@ -206,17 +229,11 @@ for (i_dev in (1:ndev)){
   curr_data$RH[i_dev] <- mean(c_data$RH,na.rm = TRUE)
   rm(c_data)
 }
-curr_data$Last_reading <- curr_data$Timestamp
-curr_data$mask <- as.numeric(curr_data$delay < 120)
-reboot_odins <- subset(curr_data,mask == 0)
-
-timePlot(subset(all_data,siteid == "ODIN-0030 (90382)"),pollutant = c('PM2.5','PM10'),avg.time = '10 min',group = TRUE)
-
 
 coordinates(all_data.10min) <- ~ lon + lat
 proj4string(all_data.10min) <- CRS('+init=epsg:4326')
 # Re-project to NZTM
-spTransform(all_data.10min,CRS('+init=epsg:2193'))
+all_data.10min <- spTransform(all_data.10min,CRS('+init=epsg:2193'))
 
 print("Starting the kriging")
 
@@ -241,7 +258,8 @@ grid <- SpatialPixelsDataFrame(grid,
                                proj4string=CRS('+init=epsg:2193'))
 
 
-
+# Get rid of NA containing rows
+all_data.10min <- subset(all_data.10min,!is.na(PM2.5))
 all_dates <- sort(unique(all_data.10min$date))
 ndates <- length(all_dates)
 breaks <- as.numeric(quantile((1:ndates),c(0,0.5,1), type = 1))
@@ -259,18 +277,18 @@ for (j in (1:(nbreaks-1))){
   for (d_slice in (j1:j2)){
     c_data <- subset(all_data.10min,subset = (date==all_dates[d_slice]))
     
-    if (length(unique(c_data$siteid))<4){
+    if (length(unique(c_data$serialn))<4){
       next
     }
     #  surf.krig <- autoKrige(pm2.5 ~ 1,data=c_data,new_data = grid, input_data=c_data)
     #  surf.krig$krige_output$timestamp <-d_slice
     #  proj4string(surf.krig$krige_output) <- CRS('+init=epsg:2193')
     
-    surf.idw <- idw(pm2.5 ~ 1,newdata = grid, locations = c_data, idp = 1)
+    surf.idw <- idw(PM2.5 ~ 1,newdata = grid, locations = c_data, idp = 1,na.action = na.omit)
     surf.idw$timestamp <-d_slice
     proj4string(surf.idw) <- CRS('+init=epsg:2193')
     
-    surf.idw2 <- idw(pm2.5 ~ 1,newdata = grid, locations = c_data, idp = 2)
+    surf.idw2 <- idw(PM2.5 ~ 1,newdata = grid, locations = c_data, idp = 2)
     surf.idw2$timestamp <-d_slice
     proj4string(surf.idw2) <- CRS('+init=epsg:2193')
     
@@ -305,11 +323,13 @@ for (j in (1:(nbreaks-1))){
       
       to_rast.idw <- surf.idw
       r0.idw <- rasterFromXYZ(cbind(surf.idw@coords,surf.idw$var1.pred))
+      names(r0.idw) <- as.character(all_dates[d_slice])
       crs(r0.idw) <- '+init=epsg:2193'
       raster_cat.idw<- addLayer(raster_cat.idw,r0.idw)
       
       to_rast.idw2 <- surf.idw2
       r0.idw2 <- rasterFromXYZ(cbind(surf.idw2@coords,surf.idw2$var1.pred))
+      names(r0.idw2) <- as.character(all_dates[d_slice])
       crs(r0.idw2) <- '+init=epsg:2193'
       raster_cat.idw2<- addLayer(raster_cat.idw2,r0.idw2)
     }
@@ -317,16 +337,16 @@ for (j in (1:(nbreaks-1))){
     print(all_dates[d_slice])
     #  }
   }
-  save('raster_cat.idw',file = paste0('/data/data_gustavo/cona/raster_cat.idw.',fidx,'.RData'))
-  save('raster_cat.idw2',file = paste0('/data/data_gustavo/cona/raster_cat.idw2.',fidx,'.Rdata'))
+  save('raster_cat.idw',file = paste0('~/data/CONA/2018/raster_cat.idw.',fidx,'.RData'))
+  save('raster_cat.idw2',file = paste0('~/data/CONA/2018/raster_cat.idw2.',fidx,'.Rdata'))
   rm('raster_cat.idw')
   rm('raster_cat.idw2')
   fidx <- fidx + 1
 }
-fidx <- 6
+fidx <- fidx
 for (i in (1:(fidx-1))){
-  load(paste0('/data/data_gustavo/cona/raster_cat.idw.',i,'.RData'))
-  load(paste0('/data/data_gustavo/cona/raster_cat.idw2.',i,'.Rdata'))
+  load(paste0('~/data/CONA/2018/raster_cat.idw.',i,'.RData'))
+  load(paste0('~/data/CONA/2018/raster_cat.idw2.',i,'.Rdata'))
   if (i == 1){
     raster_stack.idw <- raster_cat.idw
     raster_stack.idw2 <- raster_cat.idw2
@@ -351,8 +371,11 @@ for (i in (1:(fidx-1))){
 #raster_cat_LL <- projectRaster(raster_cat,crs = "+proj=longlat +datum=WGS84")
 raster_cat_idw_LL <- projectRaster(raster_stack.idw,crs = "+proj=longlat +datum=WGS84")
 raster_cat_idw2_LL <- projectRaster(raster_stack.idw2,crs = "+proj=longlat +datum=WGS84")
-save(list = c('raster_cat_idw_LL','raster_cat_idw2_LL'),file = '/data/data_gustavo/cona/raster_odin_IDW_JuneJuly2017.RData')
+save(list = c('raster_cat_idw_LL','raster_cat_idw2_LL'),file = '~/data/CONA/2018/raster_odin_LL_IDW.RData')
 
 #writeRaster(raster_cat_LL, filename="./odin_June-July2017_autokrig.nc", overwrite=TRUE)
-writeRaster(raster_cat_idw_LL, filename="./odin_June-July2017_idw.nc", overwrite=TRUE)
-writeRaster(raster_cat_idw2_LL, filename="./odin_June-July2017_idw2.nc", overwrite=TRUE)
+writeRaster(raster_cat_idw_LL, filename="~/data/CONA/2018/odin_idw.nc", overwrite=TRUE)
+writeRaster(raster_cat_idw2_LL, filename="~/data/CONA/2018/odin_idw2.nc", overwrite=TRUE)
+
+writeRaster(raster_cat_idw2_LL$X2018.07.17.08.00.00,filename = "~/data/CONA/2018/odin_idw2.tif", overwrite=TRUE)
+

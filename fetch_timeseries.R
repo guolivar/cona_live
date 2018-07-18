@@ -23,8 +23,6 @@ setwd("~/repositories/cona_live/mapping/")
 secret_hologram <- read_delim("./secret_hologram.txt", 
                               "\t", escape_double = FALSE, trim_ws = TRUE)
 
-##### Moving Average function ####
-ma <- function(x,n=5){filter(x,rep(1/n,n), sides=1)}
 ##### Get data ####
 
 # Get the devices ID
@@ -213,9 +211,12 @@ for (i_dev in (1:ndev)){
   if (i_dev == 1){
     all_data <- c_data
     all_data.10min <- timeAverage(c_data,avg.time = '10 min')
+    all_data.10min$serialn <- curr_data$ODIN[i_dev]
   } else {
     all_data <- rbind(all_data,c_data)
-    all_data.10min <- rbind(all_data.10min,timeAverage(c_data,avg.time = '10 min'))
+    tmp10min <- timeAverage(c_data,avg.time = '10 min')
+    tmp10min$serialn <- curr_data$ODIN[i_dev]
+    all_data.10min <- rbind(all_data.10min,tmp10min)
   }
   curr_data$PM1[i_dev] <- mean(c_data$PM1,na.rm = TRUE)
   curr_data$PM2.5[i_dev] <- mean(c_data$PM2.5,na.rm = TRUE)
