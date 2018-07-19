@@ -145,6 +145,10 @@ print(start_data)
 ggplot(data = all_data,aes(x=timestamp)) + 
   geom_point(aes(y=PM2.5,col=siteid),position = "jitter")
 
+ggplot(data = all_data.10min,aes(x=date)) +
+  geom_line(aes(y=PM2.5,colour=serialn))
+
+
 #for (odin_name in unique(all_data$siteid)){
 #  xx <- subset(all_data,siteid == odin_name)
 #  plot(xx$timestamp,xx$Temperature * 1000)

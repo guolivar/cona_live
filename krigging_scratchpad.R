@@ -1,21 +1,26 @@
 ##### Load relevant packages #####
-library(readr)
-library(reshape2)
-library(automap)
-library(raster)
-library(gstat)
-library(sp)
-library(rgdal)
-library(ggmap)
-library(gstat)
-library(ncdf4)
-library(RJSONIO)
-library(curl)
-library(base64enc)
-library(zoo)
-library(openair)
-library(stringi)
-
+library(librarian) # To more flexibly manage packages
+shelf(readr,
+      reshape2,
+      automap,
+      raster,
+      gstat,
+      sp,
+      rgdal,
+      ggmap,
+      gstat,
+      ncdf4,
+      RJSONIO,
+      curl,
+      base64enc,
+      zoo,
+      openair,
+      stringi,
+      viridis,
+      dplyr,
+      RColorBrewer,
+      purrr,
+      magick)
 
 ##### Set the working directory DB ####
 setwd("~/repositories/cona_live/mapping/")
@@ -23,6 +28,27 @@ setwd("~/repositories/cona_live/mapping/")
 secret_hologram <- read_delim("./secret_hologram.txt", 
                               "\t", escape_double = FALSE, trim_ws = TRUE)
 
+# Mapping function
+cona_map <- function(Yr){
+  
+  gg + geom_point(data=ndwi.df[ndwi.df$WY==Yr,], 
+                  aes(x=LONG_DD, y=LAT_DD, fill=mean),
+                  show.legend=F, pch=21, size=4.8, color="gray30")+ 
+    theme_bw() + ylab("Latitude") + xlab("Longitude") +
+    theme(axis.text.x = element_text(angle = 60, vjust=0.15, size=8),
+          legend.position=c(1,1),legend.justification=c(1,1),
+          legend.direction="vertical",legend.text=element_text(size=8),
+          legend.title=element_text(size=8, face="bold"),
+          legend.box="horizontal", panel.background = element_blank(),
+          legend.box.just = c("top"), 
+          legend.background = element_rect(fill=alpha('white', 0.6), colour = "gray30")) +
+    scale_fill_viridis(name="NDVI (Aug)", limits=range(breaks), 
+                       breaks=breaks, option = "D", direction = -1)+
+    facet_wrap(~WY, ncol = 1)
+  print(paste0("saving plot ", Yr))
+  ggsave(filename = paste0("./fig_output/ndwi/hgm_ndwi_",Yr,".png"),
+         width = 8,height=8,dpi = 150)
+}
 ##### Get data ####
 
 # Get the devices ID
@@ -98,8 +124,6 @@ for (i in (1:nsites)){
 centre_lat <- mean(curr_data$lat)
 centre_lon <- mean(curr_data$lon)
 
-# Now get datafor last 12 hours and calculate average for mapping
-# Cycle through each deviceID and calculate the 12hr average up to now
 curr_data$PM1 <- NA
 curr_data$PM2.5 <- NA
 curr_data$PM10 <- NA
@@ -108,10 +132,22 @@ curr_data$RH <- NA
 max_nmeas <- 60*12
 ndev <- length(curr_data$deviceid)
 
+## Prepare the map to plot animations
+## Set the Scale
+breaks<-(c(0,10,20,40,60,80,120,200,300)) # for color scale
+# Get the basemap
+ca <- get_map(
+  c(lon=centre_lon,lat=centre_lat),
+  zoom=15,crop=T,
+  scale="auto",color="bw",source="google",
+  maptype="terrain") # can change to terrain
+
+gg <- ggmap(ca, extent='panel',padding=0) 
+
 # UTC time start
-t_start <- as.numeric(as.POSIXct("2018/07/17 16:00:00",tz = "GMT-12"))
+t_start <- as.numeric(as.POSIXct("2018/07/06 12:00:00",tz = "GMT-12"))
 # UTC time start
-t_end <- as.numeric(as.POSIXct("2018/07/18 07:00:00",tz = "GMT-12"))
+t_end <- as.numeric(as.POSIXct("2018/07/10 00:00:00",tz = "GMT-12"))
 
 base_url <- "https://dashboard.hologram.io/api/1/csr/rdm?"
 for (i_dev in (1:ndev)){
@@ -207,7 +243,7 @@ for (i_dev in (1:ndev)){
   }
   print(min(c_data$timestamp))
   print(max(c_data$timestamp))
-  
+  c_data$date[c_data$date < as.POSIXct("2010/01/01")] <- c_data$timestamp[c_data$date < as.POSIXct("2010/01/01")]
   if (i_dev == 1){
     all_data <- c_data
     all_data.10min <- timeAverage(c_data,avg.time = '10 min')
@@ -230,6 +266,19 @@ for (i_dev in (1:ndev)){
   rm(c_data)
 }
 
+# Correct from colocation data
+# Get colo data
+reg.data <- read.delim("~/data/CONA/2018/colo_1/regression_data.txt",sep = "\t")
+for (serialn in unique(all_data.10min$serialn)){
+  reg.id <- which(reg.data$ODIN == serialn)
+  data.id <- which(all_data.10min$serialn == serialn)
+  all_data.10min[data.id,c("PM1")] <- all_data.10min[data.id,c("PM1")] * reg.data$pm1.slp[reg.id] + reg.data$pm1.int[reg.id]
+  all_data.10min[data.id,c("PM2.5")] <- all_data.10min[data.id,c("PM2.5")] * reg.data$pm2.5.slp[reg.id] + reg.data$pm2.5.int[reg.id]
+  all_data.10min[data.id,c("PM10")] <- all_data.10min[data.id,c("PM10")] * reg.data$pm10.slp[reg.id] + reg.data$pm10.int[reg.id]
+}
+
+coordinates(curr_data) <- ~ lon + lat
+proj4string(curr_data) <- CRS('+init=epsg:4326')
 coordinates(all_data.10min) <- ~ lon + lat
 proj4string(all_data.10min) <- CRS('+init=epsg:4326')
 # Re-project to NZTM
@@ -333,16 +382,23 @@ for (j in (1:(nbreaks-1))){
       crs(r0.idw2) <- '+init=epsg:2193'
       raster_cat.idw2<- addLayer(raster_cat.idw2,r0.idw2)
     }
-    #  if (min(to_rast.krig@data$var1.pred)<0){
-    print(all_dates[d_slice])
-    #  }
+    # Build the animation
+    map_out <- ggmap(ca) + geom_polygon(data = rtp,aes(x = long, y = lat, group = group, 
+                                            fill = rep(rtp[[1]], each = 5)), 
+                             size = 0, 
+                             alpha = 0.8) +
+      scale_fill_gradientn(colours = terrain.colors(10),limits=c(0, 250))
+    ggsave(filename=paste0('~/data/CONA/2018/',as.character(all_dates[d_slice]),'.png'), plot=map_out, width=6, height=6, units = "in")
+
   }
   save('raster_cat.idw',file = paste0('~/data/CONA/2018/raster_cat.idw.',fidx,'.RData'))
   save('raster_cat.idw2',file = paste0('~/data/CONA/2018/raster_cat.idw2.',fidx,'.Rdata'))
   rm('raster_cat.idw')
   rm('raster_cat.idw2')
   fidx <- fidx + 1
+  print("Done with interpolating ...")
 }
+print("Stacking")
 fidx <- fidx
 for (i in (1:(fidx-1))){
   load(paste0('~/data/CONA/2018/raster_cat.idw.',i,'.RData'))
@@ -377,5 +433,20 @@ save(list = c('raster_cat_idw_LL','raster_cat_idw2_LL'),file = '~/data/CONA/2018
 writeRaster(raster_cat_idw_LL, filename="~/data/CONA/2018/odin_idw.nc", overwrite=TRUE)
 writeRaster(raster_cat_idw2_LL, filename="~/data/CONA/2018/odin_idw2.nc", overwrite=TRUE)
 
-writeRaster(raster_cat_idw2_LL$X2018.07.17.08.00.00,filename = "~/data/CONA/2018/odin_idw2.tif", overwrite=TRUE)
+writeRaster(raster_stack.idw$X2018.07.06.08.00.00,filename = "~/data/CONA/2018/odin_idw2.tif", overwrite=TRUE)
+writeRaster(raster_cat_idw_LL$X2018.07.06.08.00.00,filename = "~/data/CONA/2018/odin_idw2_LL.tif", overwrite=TRUE)
+
+writeOGR(obj = curr_data[,(1:7)],dsn = "~/data/CONA/2018/",layer = "odin_sites",driver = "ESRI Shapefile",overwrite_layer = TRUE)
+
+ggplot(data = data.frame(all_data.10min),aes(x=date)) +
+geom_line(aes(y=Temperature,colour=serialn))
+
+ggmap(ca) + inset_raster(projectRaster(r0.idw,crs = "+proj=longlat +datum=WGS84"))
+rtp <- rasterToPolygons(projectRaster(r0.idw,crs = "+proj=longlat +datum=WGS84"))
+
+ggmap(ca) + geom_polygon(data = rtp,aes(x = long, y = lat, group = group, 
+                                        fill = rep(rtp$X2018.07.09.11.50.00, each = 5)), 
+                         size = 0, 
+                         alpha = 0.5)
+
 
