@@ -28,27 +28,6 @@ setwd("~/repositories/cona_live/mapping/")
 secret_hologram <- read_delim("./secret_hologram.txt", 
                               "\t", escape_double = FALSE, trim_ws = TRUE)
 
-# Mapping function
-cona_map <- function(Yr){
-  
-  gg + geom_point(data=ndwi.df[ndwi.df$WY==Yr,], 
-                  aes(x=LONG_DD, y=LAT_DD, fill=mean),
-                  show.legend=F, pch=21, size=4.8, color="gray30")+ 
-    theme_bw() + ylab("Latitude") + xlab("Longitude") +
-    theme(axis.text.x = element_text(angle = 60, vjust=0.15, size=8),
-          legend.position=c(1,1),legend.justification=c(1,1),
-          legend.direction="vertical",legend.text=element_text(size=8),
-          legend.title=element_text(size=8, face="bold"),
-          legend.box="horizontal", panel.background = element_blank(),
-          legend.box.just = c("top"), 
-          legend.background = element_rect(fill=alpha('white', 0.6), colour = "gray30")) +
-    scale_fill_viridis(name="NDVI (Aug)", limits=range(breaks), 
-                       breaks=breaks, option = "D", direction = -1)+
-    facet_wrap(~WY, ncol = 1)
-  print(paste0("saving plot ", Yr))
-  ggsave(filename = paste0("./fig_output/ndwi/hgm_ndwi_",Yr,".png"),
-         width = 8,height=8,dpi = 150)
-}
 ##### Get data ####
 
 # Get the devices ID
@@ -142,12 +121,10 @@ ca <- get_map(
   scale="auto",color="bw",source="google",
   maptype="terrain") # can change to terrain
 
-gg <- ggmap(ca, extent='panel',padding=0) 
-
 # UTC time start
 t_start <- as.numeric(as.POSIXct("2018/07/06 12:00:00",tz = "GMT-12"))
 # UTC time start
-t_end <- as.numeric(as.POSIXct("2018/07/10 00:00:00",tz = "GMT-12"))
+t_end <- as.numeric(as.POSIXct("2018/07/08 00:00:00",tz = "GMT-12"))
 
 base_url <- "https://dashboard.hologram.io/api/1/csr/rdm?"
 for (i_dev in (1:ndev)){
@@ -382,13 +359,25 @@ for (j in (1:(nbreaks-1))){
       crs(r0.idw2) <- '+init=epsg:2193'
       raster_cat.idw2<- addLayer(raster_cat.idw2,r0.idw2)
     }
+    rtp <- rasterToPolygons(projectRaster(r0.idw,crs = "+proj=longlat +datum=WGS84"))
+    rtp2 <- rasterToPolygons(projectRaster(r0.idw2,crs = "+proj=longlat +datum=WGS84"))
+
     # Build the animation
     map_out <- ggmap(ca) + geom_polygon(data = rtp,aes(x = long, y = lat, group = group, 
                                             fill = rep(rtp[[1]], each = 5)), 
                              size = 0, 
-                             alpha = 0.8) +
-      scale_fill_gradientn(colours = terrain.colors(10),limits=c(0, 250))
-    ggsave(filename=paste0('~/data/CONA/2018/',as.character(all_dates[d_slice]),'.png'), plot=map_out, width=6, height=6, units = "in")
+                             alpha = 0.85) +
+      scale_fill_gradient(low="white", high="red",limits=c(0, 150), name = "PM2.5") +
+      ggtitle(as.character(all_dates[d_slice]))
+    ggsave(filename=paste0('~/data/CONA/2018/idw/',as.character(all_dates[d_slice]),'.png'), plot=map_out, width=6, height=6, units = "in")
+    
+    map_out <- ggmap(ca) + geom_polygon(data = rtp2,aes(x = long, y = lat, group = group, 
+                                                       fill = rep(rtp[[1]], each = 5)), 
+                                        size = 0, 
+                                        alpha = 0.8) +
+      scale_fill_gradient(low="white", high="red",limits=c(0, 150), name = "PM2.5") +
+      ggtitle(as.character(all_dates[d_slice]))
+    ggsave(filename=paste0('~/data/CONA/2018/idw2/',as.character(all_dates[d_slice]),'.png'), plot=map_out, width=6, height=6, units = "in")
 
   }
   save('raster_cat.idw',file = paste0('~/data/CONA/2018/raster_cat.idw.',fidx,'.RData'))
@@ -440,13 +429,4 @@ writeOGR(obj = curr_data[,(1:7)],dsn = "~/data/CONA/2018/",layer = "odin_sites",
 
 ggplot(data = data.frame(all_data.10min),aes(x=date)) +
 geom_line(aes(y=Temperature,colour=serialn))
-
-ggmap(ca) + inset_raster(projectRaster(r0.idw,crs = "+proj=longlat +datum=WGS84"))
-rtp <- rasterToPolygons(projectRaster(r0.idw,crs = "+proj=longlat +datum=WGS84"))
-
-ggmap(ca) + geom_polygon(data = rtp,aes(x = long, y = lat, group = group, 
-                                        fill = rep(rtp$X2018.07.09.11.50.00, each = 5)), 
-                         size = 0, 
-                         alpha = 0.5)
-
 
