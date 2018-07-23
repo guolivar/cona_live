@@ -8,6 +8,7 @@ shelf(readr,
       sp,
       rgdal,
       ggmap,
+      scales,
       gstat,
       ncdf4,
       RJSONIO,
@@ -124,7 +125,7 @@ ca <- get_map(
 # UTC time start
 t_start <- as.numeric(as.POSIXct("2018/07/06 12:00:00",tz = "GMT-12"))
 # UTC time start
-t_end <- as.numeric(as.POSIXct("2018/07/08 00:00:00",tz = "GMT-12"))
+t_end <- as.numeric(as.POSIXct("2018/07/23 12:00:00",tz = "GMT-12"))
 
 base_url <- "https://dashboard.hologram.io/api/1/csr/rdm?"
 for (i_dev in (1:ndev)){
@@ -223,13 +224,13 @@ for (i_dev in (1:ndev)){
   c_data$date[c_data$date < as.POSIXct("2010/01/01")] <- c_data$timestamp[c_data$date < as.POSIXct("2010/01/01")]
   if (i_dev == 1){
     all_data <- c_data
-    all_data.10min <- timeAverage(c_data,avg.time = '10 min')
+    all_data.10min <- timeAverage(c_data,avg.time = '1 hour')
     all_data.10min$serialn <- curr_data$ODIN[i_dev]
     all_data.10min$lat <- curr_data$lat[i_dev]
     all_data.10min$lon <- curr_data$lon[i_dev]
   } else {
     all_data <- rbind(all_data,c_data)
-    tmp10min <- timeAverage(c_data,avg.time = '10 min')
+    tmp10min <- timeAverage(c_data,avg.time = '1 hour')
     tmp10min$serialn <- curr_data$ODIN[i_dev]
     tmp10min$lat <- curr_data$lat[i_dev]
     tmp10min$lon <- curr_data$lon[i_dev]
@@ -287,6 +288,10 @@ grid <- SpatialPixelsDataFrame(grid,
 # Get rid of NA containing rows
 all_data.10min <- subset(all_data.10min,!is.na(PM2.5))
 all_dates <- sort(unique(all_data.10min$date))
+# limits for colorscales
+cmin <- min(all_data.10min$PM2.5)
+cmax <- max(all_data.10min$PM2.5) * 0.5
+
 ndates <- length(all_dates)
 breaks <- as.numeric(quantile((1:ndates),c(0,0.5,1), type = 1))
 nbreaks <- length(breaks)
@@ -367,17 +372,21 @@ for (j in (1:(nbreaks-1))){
                                             fill = rep(rtp[[1]], each = 5)), 
                              size = 0, 
                              alpha = 0.85) +
-      scale_fill_gradient(low="white", high="red",limits=c(0, 150), name = "PM2.5") +
-      ggtitle(as.character(all_dates[d_slice]))
+      scale_fill_gradient(low="white", high="red",limits=c(0, cmax), name = "PM2.5", oob=squish) +
+      ggtitle(paste(as.character(all_dates[d_slice]+12*3600),"NZST"))
     ggsave(filename=paste0('~/data/CONA/2018/idw/',as.character(all_dates[d_slice]),'.png'), plot=map_out, width=6, height=6, units = "in")
     
     map_out <- ggmap(ca) + geom_polygon(data = rtp2,aes(x = long, y = lat, group = group, 
                                                        fill = rep(rtp[[1]], each = 5)), 
                                         size = 0, 
                                         alpha = 0.8) +
-      scale_fill_gradient(low="white", high="red",limits=c(0, 150), name = "PM2.5") +
-      ggtitle(as.character(all_dates[d_slice]))
-    ggsave(filename=paste0('~/data/CONA/2018/idw2/',as.character(all_dates[d_slice]),'.png'), plot=map_out, width=6, height=6, units = "in")
+      scale_fill_gradient(low="white", high="red",limits=c(0, cmax), name = "PM2.5", oob=squish) +
+      ggtitle(paste(as.character(all_dates[d_slice]+12*3600),"NZST"))
+    ggsave(filename=paste0('~/data/CONA/2018/idw2/',as.character(all_dates[d_slice]),'.png'),
+           plot=map_out,
+           width=6,
+           height=6,
+           units = "in")
 
   }
   save('raster_cat.idw',file = paste0('~/data/CONA/2018/raster_cat.idw.',fidx,'.RData'))
@@ -422,11 +431,27 @@ save(list = c('raster_cat_idw_LL','raster_cat_idw2_LL'),file = '~/data/CONA/2018
 writeRaster(raster_cat_idw_LL, filename="~/data/CONA/2018/odin_idw.nc", overwrite=TRUE)
 writeRaster(raster_cat_idw2_LL, filename="~/data/CONA/2018/odin_idw2.nc", overwrite=TRUE)
 
-writeRaster(raster_stack.idw$X2018.07.06.08.00.00,filename = "~/data/CONA/2018/odin_idw2.tif", overwrite=TRUE)
-writeRaster(raster_cat_idw_LL$X2018.07.06.08.00.00,filename = "~/data/CONA/2018/odin_idw2_LL.tif", overwrite=TRUE)
+#writeRaster(raster_stack.idw$X2018.07.06.08.00.00,filename = "~/data/CONA/2018/odin_idw2.tif", overwrite=TRUE)
+#writeRaster(raster_cat_idw_LL$X2018.07.06.08.00.00,filename = "~/data/CONA/2018/odin_idw2_LL.tif", overwrite=TRUE)
 
 writeOGR(obj = curr_data[,(1:7)],dsn = "~/data/CONA/2018/",layer = "odin_sites",driver = "ESRI Shapefile",overwrite_layer = TRUE)
 
-ggplot(data = data.frame(all_data.10min),aes(x=date)) +
-geom_line(aes(y=Temperature,colour=serialn))
+tseries <- ggplot(data = data.frame(all_data.10min),aes(x=date)) +
+  geom_line(aes(y=PM2.5,colour=serialn))
 
+ggsave(filename=paste0('~/data/CONA/2018/',format(min(all_data.10min$date) + 12*3600,format = "%Y%m%d"),"_",
+                       format(max(all_data.10min$date) + 12*3600,format = "%Y%m%d"),'.png'),
+       plot=map_out,
+       width=12,
+       height=6,
+       units = "in")
+
+system(paste0("convert -delay 20 -loop 0 ~/data/CONA/2018/idw/*.png ~/data/CONA/2018/idw/",
+              format(min(all_data.10min$date) + 12*3600,format = "%Y%m%d"),"_",
+              format(max(all_data.10min$date) + 12*3600,format = "%Y%m%d"),
+                ".gif"))
+
+system(paste0("convert -delay 20 -loop 0 ~/data/CONA/2018/idw2/*.png ~/data/CONA/2018/idw2/",
+              format(min(all_data.10min$date) + 12*3600,format = "%Y%m%d"),"_",
+              format(max(all_data.10min$date) + 12*3600,format = "%Y%m%d"),
+              ".gif"))
