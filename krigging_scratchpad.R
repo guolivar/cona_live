@@ -1,93 +1,275 @@
 ##### Load relevant packages #####
-library(readr)
-library(reshape2)
-library(automap)
-library(raster)
-library(gstat)
-library(sp)
-library(rgdal)
-library(ggmap)
-library(gstat)
-library(ncdf4)
+library(librarian) # To more flexibly manage packages
+shelf(readr,
+      reshape2,
+      automap,
+      raster,
+      gstat,
+      sp,
+      rgdal,
+      ggmap,
+      scales,
+      gstat,
+      ncdf4,
+      RJSONIO,
+      curl,
+      base64enc,
+      zoo,
+      openair,
+      stringi,
+      viridis,
+      dplyr,
+      RColorBrewer,
+      purrr,
+      magick)
+
 ##### Set the working directory DB ####
-setwd("~/repositories/cona/DB")
-##### Read the credentials file (hidden) ####
-access <- read.delim("./.cona_login", stringsAsFactors = FALSE)
-##### Open the connection to the DB ####
-p <- dbDriver("PostgreSQL")
-con<-dbConnect(p,
-               user=access$usr[2],
-               password=access$pwd[2],
-               host='localhost',
-               dbname='cona',
-               port=5432)
-##### Moving Average function ####
-ma <- function(x,n=5){filter(x,rep(1/n,n), sides=1)}
+setwd("~/repositories/cona_live/mapping/")
+##### Read the credentials file (ignored by GIT repository) ####
+secret_hologram <- read_delim("./secret_hologram.txt", 
+                              "\t", escape_double = FALSE, trim_ws = TRUE)
+
 ##### Get data ####
-# Select average for an hour/day at all locations and then krig the result
-data <- dbGetQuery(con,"SELECT
-                   (fs.id) as siteid,
-                   i.serialn,
-                   avg(d.value::numeric) as pm25,
-                   max(ST_X(ST_TRANSFORM(fs.geom::geometry,2193))) as x,
-                   max(ST_Y(ST_TRANSFORM(fs.geom::geometry,2193))) as y,
-                   date_trunc('minute',d.recordtime at time zone 'NZST') as date
-                   FROM
-                   data.fixed_data as d,
-                   admin.sensor as s,
-                   admin.instrument as i,
-                   admin.fixedsites as fs
-                   WHERE
-                   s.id = d.sensorid AND
-                   s.instrumentid = i.id AND
-                   fs.id = d.siteid AND
-                   i.name = 'ODIN-SD-3' AND
-                   s.name = 'PM2.5' AND
-                   (d.recordtime at time zone 'NZST') >= timestamp '2017-06-20 12:00:00' AND
-                   (d.recordtime at time zone 'NZST') <= timestamp '2017-08-31 16:00:00' AND
-                   ST_WITHIN(fs.geom::geometry, ST_BUFFER((select x.geom::geometry from admin.fixedsites as x where x.id=18),0.05))
-                   GROUP BY
-                   date_trunc('minute',d.recordtime at time zone 'NZST'),
-                   i.serialn,
-                   fs.id;")
-dbDisconnect(con)
 
-
-
-# Turn into a 60min running average
-serialn <- unique(data$serialn)
-data$pm2.5 <- data$pm25
-for (sn in serialn){
-  # Subset the data to have only 1 sensor
-  indices <- which(data$serialn==sn)
-  sensordata <- data[indices,]
-  # Moving average
-  sensordata$pm2.5 <- ma(sensordata$pm25,60)
-  data$pm2.5[indices] <- sensordata$pm2.5
+# Get the devices ID
+base_url <- "https://dashboard.hologram.io/api/1/devices?"
+tag <- "cona2018"
+built_url <- paste0(base_url,
+                    "orgid=",secret_hologram$orgid,"&",
+                    "tagname=",tag,"&",
+                    "apikey=",secret_hologram$apikey)
+req1 <- curl_fetch_memory(built_url)
+jreq1 <- fromJSON(rawToChar(req1$content))$data
+nsites <- length(jreq1)
+curr_data <- data.frame(deviceid = (1:nsites),ODIN = NA)
+for (i in (1:nsites)){
+  curr_data$deviceid[i] <- jreq1[[i]]$id
+  curr_data$ODIN[i] <- jreq1[[i]]$name
 }
 
-# Re-sample every 10 minutes
-data.10m <- subset(data,as.numeric(format(data$date,'%M')) %in% c(0,10,20,30,40,50))
-# Use only data from deployed period ... started at
-data.10m <- subset(data.10m,date>as.POSIXct('2017-06-21 04:00:00'))
+# Get the latest measurements
+base_url <- "https://dashboard.hologram.io/api/1/csr/rdm?"
+curr_data$PM1 <- NA
+curr_data$PM2.5 <- NA
+curr_data$PM10 <- NA
+curr_data$Temperature <- NA
+curr_data$RH <- NA
+curr_data$Timestamp <- as.POSIXct("2018-05-01 00:00:00",tz='UTC')
+i <- 1
+for (i in (1:nsites)){
+  built_url <- paste0(base_url,
+                      "deviceid=",curr_data$deviceid[i],"&",
+                      "limit=1&",
+                      "apikey=",secret_hologram$apikey)
+  req2 <- curl_fetch_memory(built_url)
+  jreq2 <- fromJSON(rawToChar(req2$content))$data
+  xxx <- rawToChar(base64decode(fromJSON(jreq2[[1]]$data)$data))
+  x_payload <- try(fromJSON(paste0(stri_split_fixed(xxx,",\"recordtime")[[1]][1],"}")),silent = TRUE)
+  if (inherits(x_payload,"try-error")) {
+    next
+  }
+  
+  payload <- unlist(x_payload)
+  if (length(payload)<5){
+    next
+  }
+  
+  curr_data$Timestamp[i] <- as.POSIXct(jreq2[[1]]$logged,format = "%Y-%m-%d %H:%M:%OS",tz="UTC")
+  curr_data$PM1[i] <- as.numeric(payload[1])
+  curr_data$PM2.5[i] <- as.numeric(payload[2])
+  curr_data$PM10[i] <- as.numeric(payload[3])
+  curr_data$Temperature[i] <- as.numeric(payload[7])
+  curr_data$RH[i] <- as.numeric(payload[8])
+}
 
+curr_data$delay <- floor(difftime(Sys.time(),curr_data$Timestamp, units = 'secs'))
+curr_data$mask <- 0
+for (i in (1:nsites)){
+  curr_data$mask[i] <- max(as.numeric(curr_data$delay[i] < 120),0.2)
+}
 
-save(list = c('data', 'data.10m'),file = '/data/data_gustavo/cona/odin_June2017_2.RData')
-write_tsv(x = data,path =  '/data/data_gustavo/cona/odin_June2017.txt')
-write_tsv(x = data.10m,path =  '/data/data_gustavo/cona/odin_June2017_10min.txt')
-coordinates(data.10m) <- ~ x + y
-coordinates(data) <- ~ x + y
-proj4string(data.10m) <- CRS('+init=epsg:2193')
-proj4string(data) <- CRS('+init=epsg:2193')
+# Get devices locations
+proj4string <- "+proj=tmerc +lat_0=0.0 +lon_0=173.0 +k=0.9996 +x_0=1600000.0 +y_0=10000000.0 +datum=WGS84 +units=m"
+odin_locations <- read_delim("./odin_locations.txt", 
+                             "\t", escape_double = FALSE, trim_ws = TRUE)
+curr_data$lat <- NA
+curr_data$lon <- NA
+for (i in (1:nsites)){
+  loc_id <- which(substr(odin_locations$Serialn,7,11)==substr(curr_data$ODIN[i],6,9))
+  p <- project(cbind(odin_locations$Easting[loc_id],odin_locations$Northing[loc_id]),proj = proj4string,inv = TRUE)
+  curr_data$lon[i] <- p[1]
+  curr_data$lat[i] <- p[2]
+}
+
+centre_lat <- mean(curr_data$lat)
+centre_lon <- mean(curr_data$lon)
+
+curr_data$PM1 <- NA
+curr_data$PM2.5 <- NA
+curr_data$PM10 <- NA
+curr_data$Temperature <- NA
+curr_data$RH <- NA
+max_nmeas <- 60*12
+ndev <- length(curr_data$deviceid)
+
+## Prepare the map to plot animations
+## Set the Scale
+breaks<-(c(0,10,20,40,60,80,120,200,300)) # for color scale
+# Get the basemap
+ca <- get_map(
+  c(lon=centre_lon,lat=centre_lat),
+  zoom=15,crop=T,
+  scale="auto",color="bw",source="google",
+  maptype="terrain") # can change to terrain
+
+# UTC time start
+t_start <- as.numeric(as.POSIXct("2018/07/06 12:00:00",tz = "GMT-12"))
+# UTC time start
+t_end <- as.numeric(as.POSIXct("2018/07/23 12:00:00",tz = "GMT-12"))
+
+base_url <- "https://dashboard.hologram.io/api/1/csr/rdm?"
+for (i_dev in (1:ndev)){
+  ndata <- 1
+  nstep <- 1
+  print("Getting data")
+  while (ndata >= 1){
+    if (nstep == 1){
+      built_url <- paste0(base_url,
+                          "deviceid=",curr_data$deviceid[i_dev],"&",
+                          "timestart=",t_start,"&",
+                          "timeend=",t_end,"&",
+                          "limit=1000&",
+                          "orgid=",secret_hologram$orgid,"&",
+                          "apikey=",secret_hologram$apikey)
+      req2 <- curl_fetch_memory(built_url)
+      jreq2_tmp <- fromJSON(rawToChar(req2$content))$data
+      jreq2 <- jreq2_tmp
+    } else {
+      built_url <- paste0(base_url,
+                          "deviceid=",curr_data$deviceid[i_dev],"&",
+                          "timestart=",t_start,"&",
+                          "timeend=",t_end,"&",
+                          "limit=1000&",
+                          "startat=",startat,"&",
+                          "orgid=",secret_hologram$orgid,"&",
+                          "apikey=",secret_hologram$apikey)
+      req2 <- curl_fetch_memory(built_url)
+      jreq2_tmp <- fromJSON(rawToChar(req2$content))$data
+      jreq2 <- append(jreq2,fromJSON(rawToChar(req2$content))$data)
+    }
+    
+    ndata <- length(jreq2_tmp)
+    if (ndata < 1){
+      break
+    }
+    startat <- jreq2_tmp[[ndata]]$id
+    nstep <- nstep + 1
+  }
+  
+  #print(jreq2[[ndata]]$data)
+  ndata <- length(jreq2)
+  print("Got data")
+  print(ndata)
+  if (ndata < 1){
+    # This device didn't have data for this period
+    next
+  }
+  c_data <- data.frame(id = (1:ndata))
+  c_data$PM1 <- NA
+  c_data$PM2.5 <- NA
+  c_data$PM10 <- NA
+  c_data$PMc <- NA
+  c_data$GAS1 <- NA
+  c_data$Tgas1 <- NA
+  c_data$GAS2 <- NA
+  c_data$Temperature <- NA
+  c_data$RH <- NA
+  c_data$date <- as.POSIXct(jreq2[[ndata]]$logged,format = "%Y-%m-%d %H:%M:%OS",tz="UTC")
+  c_data$timestamp <- c_data$date
+  c_data$lat <- curr_data$lat[i_dev]
+  c_data$lon <- curr_data$lon[i_dev]
+  c_data$serialn <- curr_data$ODIN[i_dev]
+  
+  for (i in (1:ndata)){
+    xxx <- rawToChar(base64decode(fromJSON(jreq2[[i]]$data)$data))
+    x_payload <- try(fromJSON(xxx),silent = TRUE)
+    if (inherits(x_payload,"try-error")) {
+      next
+    }
+    
+    payload <- unlist(x_payload)
+    if (length(payload)<5){
+      next
+    }
+    # {"PM1":4,"PM2.5":6,"PM10":6,"GAS1":-999,"Tgas1":0,"GAS2":204,"Temperature":7.35,"RH":80.85,"recordtime":"2018/07/11;00:21:01"}
+    c_data$PM1[i] <- as.numeric(payload[1])
+    c_data$PM2.5[i] <- as.numeric(payload[2])
+    c_data$PM10[i] <- as.numeric(payload[3])
+    c_data$PMc[i] <- as.numeric(payload[3]) - as.numeric(payload[2])
+    c_data$GAS1[i] <- as.numeric(payload[4])
+    c_data$Tgas1[i] <- as.numeric(payload[5])
+    c_data$GAS2[i] <- as.numeric(payload[6])
+    c_data$Temperature[i] <- as.numeric(payload[7])
+    c_data$RH[i] <- as.numeric(payload[8])
+    c_data$date[i] <- as.POSIXct(as.character(payload[9]),format = "%Y/%m/%d;%H:%M:%S",tz="UTC")
+    c_data$timestamp[i] <- as.POSIXct(jreq2[[i]]$logged,format = "%Y-%m-%d %H:%M:%OS",tz="UTC")
+  }
+  
+  has_data <- try(length(c_data$PM1),silent = TRUE)
+  if (inherits(has_data,"try-error")) {
+    next
+  }
+  print(min(c_data$timestamp))
+  print(max(c_data$timestamp))
+  c_data$date[c_data$date < as.POSIXct("2010/01/01")] <- c_data$timestamp[c_data$date < as.POSIXct("2010/01/01")]
+  if (i_dev == 1){
+    all_data <- c_data
+    all_data.10min <- timeAverage(c_data,avg.time = '1 hour')
+    all_data.10min$serialn <- curr_data$ODIN[i_dev]
+    all_data.10min$lat <- curr_data$lat[i_dev]
+    all_data.10min$lon <- curr_data$lon[i_dev]
+  } else {
+    all_data <- rbind(all_data,c_data)
+    tmp10min <- timeAverage(c_data,avg.time = '1 hour')
+    tmp10min$serialn <- curr_data$ODIN[i_dev]
+    tmp10min$lat <- curr_data$lat[i_dev]
+    tmp10min$lon <- curr_data$lon[i_dev]
+    all_data.10min <- rbind(all_data.10min,tmp10min)
+  }
+  curr_data$PM1[i_dev] <- mean(c_data$PM1,na.rm = TRUE)
+  curr_data$PM2.5[i_dev] <- mean(c_data$PM2.5,na.rm = TRUE)
+  curr_data$PM10[i_dev] <- mean(c_data$PM10,na.rm = TRUE)
+  curr_data$Temperature[i_dev] <- mean(c_data$Temperature,na.rm = TRUE)
+  curr_data$RH[i_dev] <- mean(c_data$RH,na.rm = TRUE)
+  rm(c_data)
+}
+
+# Correct from colocation data
+# Get colo data
+reg.data <- read.delim("~/data/CONA/2018/colo_1/regression_data.txt",sep = "\t")
+for (serialn in unique(all_data.10min$serialn)){
+  reg.id <- which(reg.data$ODIN == serialn)
+  data.id <- which(all_data.10min$serialn == serialn)
+  all_data.10min[data.id,c("PM1")] <- all_data.10min[data.id,c("PM1")] * reg.data$pm1.slp[reg.id] + reg.data$pm1.int[reg.id]
+  all_data.10min[data.id,c("PM2.5")] <- all_data.10min[data.id,c("PM2.5")] * reg.data$pm2.5.slp[reg.id] + reg.data$pm2.5.int[reg.id]
+  all_data.10min[data.id,c("PM10")] <- all_data.10min[data.id,c("PM10")] * reg.data$pm10.slp[reg.id] + reg.data$pm10.int[reg.id]
+}
+
+coordinates(curr_data) <- ~ lon + lat
+proj4string(curr_data) <- CRS('+init=epsg:4326')
+coordinates(all_data.10min) <- ~ lon + lat
+proj4string(all_data.10min) <- CRS('+init=epsg:4326')
+# Re-project to NZTM
+all_data.10min <- spTransform(all_data.10min,CRS('+init=epsg:2193'))
 
 print("Starting the kriging")
 
 #Setting the  prediction grid properties
 cellsize <- 100 #pixel size in projection units (NZTM, i.e. metres)
-min_x <- data.10m@bbox[1,1] - cellsize#minimun x coordinate
-min_y <- data.10m@bbox[2,1] - cellsize #minimun y coordinate
-max_x <- data.10m@bbox[1,2] + cellsize #mximum x coordinate
-max_y <- data.10m@bbox[2,2] + cellsize #maximum y coordinate
+min_x <- all_data.10min@bbox[1,1] - cellsize#minimun x coordinate
+min_y <- all_data.10min@bbox[2,1] - cellsize #minimun y coordinate
+max_x <- all_data.10min@bbox[1,2] + cellsize #mximum x coordinate
+max_y <- all_data.10min@bbox[2,2] + cellsize #maximum y coordinate
 
 x_length <- max_x - min_x #easting amplitude
 y_length <- max_y - min_y #northing amplitude
@@ -103,10 +285,15 @@ grid <- SpatialPixelsDataFrame(grid,
                                proj4string=CRS('+init=epsg:2193'))
 
 
+# Get rid of NA containing rows
+all_data.10min <- subset(all_data.10min,!is.na(PM2.5))
+all_dates <- sort(unique(all_data.10min$date))
+# limits for colorscales
+cmin <- min(all_data.10min$PM2.5)
+cmax <- max(all_data.10min$PM2.5) * 0.5
 
-all_dates <- sort(unique(data.10m$date))
 ndates <- length(all_dates)
-breaks <- as.numeric(quantile((1:ndates),c(0,0.2,0.4,0.6,0.8,1), type = 1))
+breaks <- as.numeric(quantile((1:ndates),c(0,0.5,1), type = 1))
 nbreaks <- length(breaks)
 fidx <- 1
 for (j in (1:(nbreaks-1))){
@@ -119,20 +306,20 @@ for (j in (1:(nbreaks-1))){
     j2 <- breaks[j+1]
   }
   for (d_slice in (j1:j2)){
-    c_data <- subset(data.10m,subset = (date==all_dates[d_slice]))
+    c_data <- subset(all_data.10min,subset = (date==all_dates[d_slice]))
     
-    if (length(unique(c_data$siteid))<4){
+    if (length(unique(c_data$serialn))<4){
       next
     }
     #  surf.krig <- autoKrige(pm2.5 ~ 1,data=c_data,new_data = grid, input_data=c_data)
     #  surf.krig$krige_output$timestamp <-d_slice
     #  proj4string(surf.krig$krige_output) <- CRS('+init=epsg:2193')
     
-    surf.idw <- idw(pm2.5 ~ 1,newdata = grid, locations = c_data, idp = 1)
+    surf.idw <- idw(PM2.5 ~ 1,newdata = grid, locations = c_data, idp = 1,na.action = na.omit)
     surf.idw$timestamp <-d_slice
     proj4string(surf.idw) <- CRS('+init=epsg:2193')
     
-    surf.idw2 <- idw(pm2.5 ~ 1,newdata = grid, locations = c_data, idp = 2)
+    surf.idw2 <- idw(PM2.5 ~ 1,newdata = grid, locations = c_data, idp = 2)
     surf.idw2$timestamp <-d_slice
     proj4string(surf.idw2) <- CRS('+init=epsg:2193')
     
@@ -167,28 +354,53 @@ for (j in (1:(nbreaks-1))){
       
       to_rast.idw <- surf.idw
       r0.idw <- rasterFromXYZ(cbind(surf.idw@coords,surf.idw$var1.pred))
+      names(r0.idw) <- as.character(all_dates[d_slice])
       crs(r0.idw) <- '+init=epsg:2193'
       raster_cat.idw<- addLayer(raster_cat.idw,r0.idw)
       
       to_rast.idw2 <- surf.idw2
       r0.idw2 <- rasterFromXYZ(cbind(surf.idw2@coords,surf.idw2$var1.pred))
+      names(r0.idw2) <- as.character(all_dates[d_slice])
       crs(r0.idw2) <- '+init=epsg:2193'
       raster_cat.idw2<- addLayer(raster_cat.idw2,r0.idw2)
     }
-    #  if (min(to_rast.krig@data$var1.pred)<0){
-    print(all_dates[d_slice])
-    #  }
+    rtp <- rasterToPolygons(projectRaster(r0.idw,crs = "+proj=longlat +datum=WGS84"))
+    rtp2 <- rasterToPolygons(projectRaster(r0.idw2,crs = "+proj=longlat +datum=WGS84"))
+
+    # Build the animation
+    map_out <- ggmap(ca) + geom_polygon(data = rtp,aes(x = long, y = lat, group = group, 
+                                            fill = rep(rtp[[1]], each = 5)), 
+                             size = 0, 
+                             alpha = 0.85) +
+      scale_fill_gradient(low="white", high="red",limits=c(0, cmax), name = "PM2.5", oob=squish) +
+      ggtitle(paste(as.character(all_dates[d_slice]+12*3600),"NZST"))
+    ggsave(filename=paste0('~/data/CONA/2018/idw/',as.character(all_dates[d_slice]),'.png'), plot=map_out, width=6, height=6, units = "in")
+    
+    map_out <- ggmap(ca) + geom_polygon(data = rtp2,aes(x = long, y = lat, group = group, 
+                                                       fill = rep(rtp[[1]], each = 5)), 
+                                        size = 0, 
+                                        alpha = 0.8) +
+      scale_fill_gradient(low="white", high="red",limits=c(0, cmax), name = "PM2.5", oob=squish) +
+      ggtitle(paste(as.character(all_dates[d_slice]+12*3600),"NZST"))
+    ggsave(filename=paste0('~/data/CONA/2018/idw2/',as.character(all_dates[d_slice]),'.png'),
+           plot=map_out,
+           width=6,
+           height=6,
+           units = "in")
+
   }
-  save('raster_cat.idw',file = paste0('/data/data_gustavo/cona/raster_cat.idw.',fidx,'.RData'))
-  save('raster_cat.idw2',file = paste0('/data/data_gustavo/cona/raster_cat.idw2.',fidx,'.Rdata'))
+  save('raster_cat.idw',file = paste0('~/data/CONA/2018/raster_cat.idw.',fidx,'.RData'))
+  save('raster_cat.idw2',file = paste0('~/data/CONA/2018/raster_cat.idw2.',fidx,'.Rdata'))
   rm('raster_cat.idw')
   rm('raster_cat.idw2')
   fidx <- fidx + 1
+  print("Done with interpolating ...")
 }
-fidx <- 6
+print("Stacking")
+fidx <- fidx
 for (i in (1:(fidx-1))){
-  load(paste0('/data/data_gustavo/cona/raster_cat.idw.',i,'.RData'))
-  load(paste0('/data/data_gustavo/cona/raster_cat.idw2.',i,'.Rdata'))
+  load(paste0('~/data/CONA/2018/raster_cat.idw.',i,'.RData'))
+  load(paste0('~/data/CONA/2018/raster_cat.idw2.',i,'.Rdata'))
   if (i == 1){
     raster_stack.idw <- raster_cat.idw
     raster_stack.idw2 <- raster_cat.idw2
@@ -213,8 +425,33 @@ for (i in (1:(fidx-1))){
 #raster_cat_LL <- projectRaster(raster_cat,crs = "+proj=longlat +datum=WGS84")
 raster_cat_idw_LL <- projectRaster(raster_stack.idw,crs = "+proj=longlat +datum=WGS84")
 raster_cat_idw2_LL <- projectRaster(raster_stack.idw2,crs = "+proj=longlat +datum=WGS84")
-save(list = c('raster_cat_idw_LL','raster_cat_idw2_LL'),file = '/data/data_gustavo/cona/raster_odin_IDW_JuneJuly2017.RData')
+save(list = c('raster_cat_idw_LL','raster_cat_idw2_LL'),file = '~/data/CONA/2018/raster_odin_LL_IDW.RData')
 
 #writeRaster(raster_cat_LL, filename="./odin_June-July2017_autokrig.nc", overwrite=TRUE)
-writeRaster(raster_cat_idw_LL, filename="./odin_June-July2017_idw.nc", overwrite=TRUE)
-writeRaster(raster_cat_idw2_LL, filename="./odin_June-July2017_idw2.nc", overwrite=TRUE)
+writeRaster(raster_cat_idw_LL, filename="~/data/CONA/2018/odin_idw.nc", overwrite=TRUE)
+writeRaster(raster_cat_idw2_LL, filename="~/data/CONA/2018/odin_idw2.nc", overwrite=TRUE)
+
+#writeRaster(raster_stack.idw$X2018.07.06.08.00.00,filename = "~/data/CONA/2018/odin_idw2.tif", overwrite=TRUE)
+#writeRaster(raster_cat_idw_LL$X2018.07.06.08.00.00,filename = "~/data/CONA/2018/odin_idw2_LL.tif", overwrite=TRUE)
+
+writeOGR(obj = curr_data[,(1:7)],dsn = "~/data/CONA/2018/",layer = "odin_sites",driver = "ESRI Shapefile",overwrite_layer = TRUE)
+
+tseries <- ggplot(data = data.frame(all_data.10min),aes(x=date)) +
+  geom_line(aes(y=PM2.5,colour=serialn))
+
+ggsave(filename=paste0('~/data/CONA/2018/',format(min(all_data.10min$date) + 12*3600,format = "%Y%m%d"),"_",
+                       format(max(all_data.10min$date) + 12*3600,format = "%Y%m%d"),'.png'),
+       plot=map_out,
+       width=12,
+       height=6,
+       units = "in")
+
+system(paste0("convert -delay 20 -loop 0 ~/data/CONA/2018/idw/*.png ~/data/CONA/2018/idw/",
+              format(min(all_data.10min$date) + 12*3600,format = "%Y%m%d"),"_",
+              format(max(all_data.10min$date) + 12*3600,format = "%Y%m%d"),
+                ".gif"))
+
+system(paste0("convert -delay 20 -loop 0 ~/data/CONA/2018/idw2/*.png ~/data/CONA/2018/idw2/",
+              format(min(all_data.10min$date) + 12*3600,format = "%Y%m%d"),"_",
+              format(max(all_data.10min$date) + 12*3600,format = "%Y%m%d"),
+              ".gif"))

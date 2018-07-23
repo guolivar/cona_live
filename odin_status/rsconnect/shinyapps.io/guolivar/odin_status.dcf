@@ -1,0 +1,12 @@
+name: odin_status
+title: odin_status
+username:
+account: guolivar
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 376441
+bundleId: 1470573
+url: https://guolivar.shinyapps.io/odin_status/
+when: 1531087360.99694
+asMultiple: FALSE
+asStatic: FALSE

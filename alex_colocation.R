@@ -41,75 +41,10 @@ for (i in (1:nsites)){
   curr_data$ODIN[i] <- jreq1[[i]]$name
 }
 
-# Get the latest measurements
-base_url <- "https://dashboard.hologram.io/api/1/csr/rdm?"
-curr_data$PM1 <- NA
-curr_data$PM2.5 <- NA
-curr_data$PM10 <- NA
-curr_data$Temperature <- NA
-curr_data$RH <- NA
-curr_data$Timestamp <- as.POSIXct("2018-05-01 00:00:00",tz='UTC')
-i <- 1
-for (i in (1:nsites)){
-  built_url <- paste0(base_url,
-                      "deviceid=",curr_data$deviceid[i],"&",
-                      "limit=1&",
-                      "apikey=",secret_hologram$apikey)
-  req2 <- curl_fetch_memory(built_url)
-  jreq2 <- fromJSON(rawToChar(req2$content))$data
-  xxx <- rawToChar(base64decode(fromJSON(jreq2[[1]]$data)$data))
-  x_payload <- try(fromJSON(paste0(stri_split_fixed(xxx,",\"recordtime")[[1]][1],"}")),silent = TRUE)
-  if (inherits(x_payload,"try-error")) {
-    next
-  }
-  
-  payload <- unlist(x_payload)
-  if (length(payload)<5){
-    next
-  }
-  
-  curr_data$Timestamp[i] <- as.POSIXct(jreq2[[1]]$logged,format = "%Y-%m-%d %H:%M:%OS",tz="UTC")
-  curr_data$PM1[i] <- as.numeric(payload[1])
-  curr_data$PM2.5[i] <- as.numeric(payload[2])
-  curr_data$PM10[i] <- as.numeric(payload[3])
-  curr_data$Temperature[i] <- as.numeric(payload[7])
-  curr_data$RH[i] <- as.numeric(payload[8])
-}
-
-curr_data$delay <- floor(difftime(Sys.time(),curr_data$Timestamp, units = 'secs'))
-curr_data$mask <- 0
-for (i in (1:nsites)){
-  curr_data$mask[i] <- max(as.numeric(curr_data$delay[i] < 120),0.2)
-}
-
-# Get devices locations
-proj4string <- "+proj=tmerc +lat_0=0.0 +lon_0=173.0 +k=0.9996 +x_0=1600000.0 +y_0=10000000.0 +datum=WGS84 +units=m"
-odin_locations <- read_delim("./odin_locations.txt", 
-                             "\t", escape_double = FALSE, trim_ws = TRUE)
-curr_data$lat <- NA
-curr_data$lon <- NA
-for (i in (1:nsites)){
-  loc_id <- which(substr(odin_locations$Serialn,7,11)==substr(curr_data$ODIN[i],6,9))
-  p <- project(cbind(odin_locations$Easting[loc_id],odin_locations$Northing[loc_id]),proj = proj4string,inv = TRUE)
-  curr_data$lon[i] <- p[1]
-  curr_data$lat[i] <- p[2]
-}
-
-centre_lat <- mean(curr_data$lat)
-centre_lon <- mean(curr_data$lon)
-
-# Now get datafor last 12 hours and calculate average for mapping
-# Cycle through each deviceID and calculate the 12hr average up to now
-curr_data$PM1 <- NA
-curr_data$PM2.5 <- NA
-curr_data$PM10 <- NA
-curr_data$Temperature <- NA
-curr_data$RH <- NA
-max_nmeas <- 60*12
 ndev <- length(curr_data$deviceid)
 
 # UTC time start
-t_start <- as.numeric(as.POSIXct("2018/07/04 12:00:00",tz = "GMT-12"))
+t_start <- as.numeric(as.POSIXct("2018/07/04 19:00:00",tz = "GMT-12"))
 # UTC time start
 t_end <- as.numeric(as.POSIXct("2018/07/06 07:00:00",tz = "GMT-12"))
 
@@ -218,33 +153,93 @@ for (i_dev in (1:ndev)){
     tmp10min$serialn <- curr_data$ODIN[i_dev]
     all_data.10min <- rbind(all_data.10min,tmp10min)
   }
-  curr_data$PM1[i_dev] <- mean(c_data$PM1,na.rm = TRUE)
-  curr_data$PM2.5[i_dev] <- mean(c_data$PM2.5,na.rm = TRUE)
-  curr_data$PM10[i_dev] <- mean(c_data$PM10,na.rm = TRUE)
-  curr_data$Temperature[i_dev] <- mean(c_data$Temperature,na.rm = TRUE)
-  curr_data$RH[i_dev] <- mean(c_data$RH,na.rm = TRUE)
+
   rm(c_data)
 }
 curr_data$Last_reading <- curr_data$Timestamp
 
 
 
-  ggplot(data = all_data,aes(x=timestamp)) +
-  geom_line(aes(y=PM2.5,colour=serialn))
+ggplot(data = all_data.10min,aes(x=date)) +
+  geom_line(aes(y=Temperature,colour=serialn))
+
+# Reference ODIN (arbitrary choice)
+base_SN <- "ODIN-0022 (90317)"
+base_odin <- subset(all_data.10min,serialn==base_SN)
+curr_data$pm1.int <- NA
+curr_data$pm1.slp <- NA
+curr_data$pm1.int_2.5 <- NA
+curr_data$pm1.int_97.5 <- NA
+curr_data$pm1.slp_2.5 <- NA
+curr_data$pm1.slp_97.5 <- NA
+curr_data$pm1.r2 <- NA
+
+curr_data$pm2.5.int <- NA
+curr_data$pm2.5.slp <- NA
+curr_data$pm2.5.int_2.5 <- NA
+curr_data$pm2.5.int_97.5 <- NA
+curr_data$pm2.5.slp_2.5 <- NA
+curr_data$pm2.5.slp_97.5 <- NA
+curr_data$pm2.5.r2 <- NA
+
+curr_data$pm10.int <- NA
+curr_data$pm10.slp <- NA
+curr_data$pm10.int_2.5 <- NA
+curr_data$pm10.int_97.5 <- NA
+curr_data$pm10.slp_2.5 <- NA
+curr_data$pm10.slp_97.5 <- NA
+curr_data$pm10.r2 <- NA
 
 
-# plot_data <- all_data
-# select_SN <- "ODIN-0024 (90333)"
-# plot_data <- subset(all_data,serialn==select_SN)
-# ggplot(data = plot_data,aes(x=date)) +
-#   geom_line(aes(y=rollmean(PM1,60,na.pad=TRUE),colour='PM1'))+
-#   geom_line(aes(y=rollmean(PM2.5,60,na.pad=TRUE),colour='PM2.5'))+
-#   geom_line(aes(y=rollmean(PM10,60,na.pad=TRUE),colour='PM10')) +
-#   geom_line(aes(y=rollmean(Temperature * 5,60,na.pad=TRUE),colour='T * 10')) +
-#   ggtitle(select_SN)
+for (select_SN in unique(all_data.10min$serialn)){
+  odin_idx <- which(curr_data$ODIN == select_SN)
+  test_odin <- subset(all_data.10min,serialn==select_SN)
+  joined_odin <- merge(base_odin,test_odin,by = 'date')
+  # PM1
+  lm.pm1 <- lm(data = joined_odin, PM1.x ~ PM1.y)
+  lm.coefs <- coef(lm.pm1)
+  lm.confint <- confint(lm.pm1)
+  curr_data$pm1.int[odin_idx] <- lm.coefs[1]
+  curr_data$pm1.slp[odin_idx] <- lm.coefs[2]
+  curr_data$pm1.int_2.5[odin_idx] <- lm.confint[1]
+  curr_data$pm1.int_97.5[odin_idx] <- lm.confint[3]
+  curr_data$pm1.slp_2.5[odin_idx] <- lm.confint[2]
+  curr_data$pm1.slp_97.5[odin_idx] <- lm.confint[4]
+  curr_data$pm1.r2[odin_idx] <- cor(joined_odin$PM1.x,joined_odin$PM1.y,use = 'pairwise')^2
+  #PM2.5
+  lm.pm2.5 <- lm(data = joined_odin, PM2.5.x ~ PM2.5.y)
+  lm.coefs <- coef(lm.pm2.5)
+  lm.confint <- confint(lm.pm2.5)
+  curr_data$pm2.5.int[odin_idx] <- lm.coefs[1]
+  curr_data$pm2.5.slp[odin_idx] <- lm.coefs[2]
+  curr_data$pm2.5.int_2.5[odin_idx] <- lm.confint[1]
+  curr_data$pm2.5.int_97.5[odin_idx] <- lm.confint[3]
+  curr_data$pm2.5.slp_2.5[odin_idx] <- lm.confint[2]
+  curr_data$pm2.5.slp_97.5[odin_idx] <- lm.confint[4]
+  curr_data$pm2.5.r2[odin_idx] <- cor(joined_odin$PM2.5.x,joined_odin$PM2.5.y,use = 'pairwise')^2
+  
+  #PM10
+  lm.pm10 <- lm(data = joined_odin, PM10.x ~ PM10.y)
+  lm.coefs <- coef(lm.pm10)
+  lm.confint <- confint(lm.pm10)
+  curr_data$pm10.int[odin_idx] <- lm.coefs[1]
+  curr_data$pm10.slp[odin_idx] <- lm.coefs[2]
+  curr_data$pm10.int_2.5[odin_idx] <- lm.confint[1]
+  curr_data$pm10.int_97.5[odin_idx] <- lm.confint[3]
+  curr_data$pm10.slp_2.5[odin_idx] <- lm.confint[2]
+  curr_data$pm10.slp_97.5[odin_idx] <- lm.confint[4]
+  curr_data$pm10.r2[odin_idx] <- cor(joined_odin$PM10.x,joined_odin$PM10.y,use = 'pairwise')^2
+}
 
+write_delim(curr_data,paste0("~/data/CONA/2018/colo_1/regression_data.txt"),delim = "\t")
 
-for (select_SN in unique(all_data$serialn)){
-  save_data <- subset(all_data,serialn==select_SN)
-  write_delim(save_data,paste0("~/data/CONA/2018/colo_1/",select_SN,".txt"),delim = "\t")
+# Correct from colocation data
+# Get colo data
+reg.data <- read.delim("~/data/CONA/2018/colo_1/regression_data.txt",sep = "\t")
+for (serialn in unique(all_data.10min$serialn)){
+  reg.id <- which(reg.data$ODIN == serialn)
+  data.id <- which(all_data.10min$serialn == serialn)
+  all_data.10min[data.id,c("PM1")] <- all_data.10min[data.id,c("PM1")] * reg.data$pm1.slp[reg.id] + reg.data$pm1.int[reg.id]
+  all_data.10min[data.id,c("PM2.5")] <- all_data.10min[data.id,c("PM2.5")] * reg.data$pm2.5.slp[reg.id] + reg.data$pm2.5.int[reg.id]
+  all_data.10min[data.id,c("PM10")] <- all_data.10min[data.id,c("PM10")] * reg.data$pm10.slp[reg.id] + reg.data$pm10.int[reg.id]
 }
