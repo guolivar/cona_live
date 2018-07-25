@@ -125,9 +125,9 @@ ca <- get_map(
 
 ## Get the timeseries data #####
 # UTC time start
-t_start <- as.numeric(as.POSIXct("2018/07/06 12:00:00",tz = "GMT-12"))
+t_start <- as.numeric(as.POSIXct("2018/07/24 12:00:00",tz = "GMT-12"))
 # UTC time start
-t_end <- as.numeric(as.POSIXct("2018/07/24 01:00:00",tz = "GMT-12"))
+t_end <- as.numeric(as.POSIXct("2018/07/25 12:00:00",tz = "GMT-12"))
 # Set the averaging interval
 time_avg <- '15 min'
 
@@ -224,7 +224,8 @@ for (i_dev in (1:ndev)){
   }
   print(min(c_data$timestamp))
   print(max(c_data$timestamp))
-  #c_data$date[c_data$date < as.POSIXct("2010/01/01")] <- c_data$timestamp[c_data$date < as.POSIXct("2010/01/01")]
+  tmp_error_catching <- try(c_data$date[c_data$date < as.POSIXct("2010/01/01")] <- c_data$timestamp[c_data$date < as.POSIXct("2010/01/01")],
+                            silent = TRUE)
   if (i_dev == 1){
     all_data <- c_data
     all_data.tavg <- timeAverage(c_data,avg.time = time_avg)
@@ -464,3 +465,28 @@ system(paste0("convert -delay 20 -loop 0 ",data_path,"idw2/*.png ",data_path,"id
               format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
               format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
               ".gif"))
+
+## Create MP4 video
+system(paste0("ffmpeg -f gif -i ",
+              data_path,
+              "idw/",
+              format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
+              format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
+              ".gif ",
+              data_path,
+              "idw/",
+              format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
+              format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
+              ".mp4"))
+
+system(paste0("ffmpeg -f gif -i ",
+              data_path,
+              "idw2/",
+              format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
+              format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
+              ".gif ",
+              data_path,
+              "idw2/",
+              format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
+              format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
+              ".mp4"))
