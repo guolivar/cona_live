@@ -25,13 +25,14 @@ shelf(readr,
 
 ##### Set the working directory DB ####
 setwd("~/repositories/cona_live/mapping/")
+data_path <- "./"
 ##### Read the credentials file (ignored by GIT repository) ####
 secret_hologram <- read_delim("./secret_hologram.txt", 
-                              "\t", escape_double = FALSE, trim_ws = TRUE)
+                              " ", escape_double = FALSE, trim_ws = TRUE)
 
 ##### Get data ####
 
-# Get the devices ID
+# Get the devices ID #####
 base_url <- "https://dashboard.hologram.io/api/1/devices?"
 tag <- "cona2018"
 built_url <- paste0(base_url,
@@ -47,7 +48,7 @@ for (i in (1:nsites)){
   curr_data$ODIN[i] <- jreq1[[i]]$name
 }
 
-# Get the latest measurements
+# Get the latest measurements #####
 base_url <- "https://dashboard.hologram.io/api/1/csr/rdm?"
 curr_data$PM1 <- NA
 curr_data$PM2.5 <- NA
@@ -112,7 +113,7 @@ curr_data$RH <- NA
 max_nmeas <- 60*12
 ndev <- length(curr_data$deviceid)
 
-## Prepare the map to plot animations
+## Prepare the map to plot animations #####
 ## Set the Scale
 breaks<-(c(0,10,20,40,60,80,120,200,300)) # for color scale
 # Get the basemap
@@ -122,10 +123,13 @@ ca <- get_map(
   scale="auto",color="bw",source="google",
   maptype="terrain") # can change to terrain
 
+## Get the timeseries data #####
 # UTC time start
 t_start <- as.numeric(as.POSIXct("2018/07/06 12:00:00",tz = "GMT-12"))
 # UTC time start
-t_end <- as.numeric(as.POSIXct("2018/07/23 12:00:00",tz = "GMT-12"))
+t_end <- as.numeric(as.POSIXct("2018/07/24 01:00:00",tz = "GMT-12"))
+# Set the averaging interval
+time_avg <- '15 min'
 
 base_url <- "https://dashboard.hologram.io/api/1/csr/rdm?"
 for (i_dev in (1:ndev)){
@@ -166,7 +170,6 @@ for (i_dev in (1:ndev)){
     nstep <- nstep + 1
   }
   
-  #print(jreq2[[ndata]]$data)
   ndata <- length(jreq2)
   print("Got data")
   print(ndata)
@@ -221,20 +224,20 @@ for (i_dev in (1:ndev)){
   }
   print(min(c_data$timestamp))
   print(max(c_data$timestamp))
-  c_data$date[c_data$date < as.POSIXct("2010/01/01")] <- c_data$timestamp[c_data$date < as.POSIXct("2010/01/01")]
+  #c_data$date[c_data$date < as.POSIXct("2010/01/01")] <- c_data$timestamp[c_data$date < as.POSIXct("2010/01/01")]
   if (i_dev == 1){
     all_data <- c_data
-    all_data.10min <- timeAverage(c_data,avg.time = '1 hour')
-    all_data.10min$serialn <- curr_data$ODIN[i_dev]
-    all_data.10min$lat <- curr_data$lat[i_dev]
-    all_data.10min$lon <- curr_data$lon[i_dev]
+    all_data.tavg <- timeAverage(c_data,avg.time = time_avg)
+    all_data.tavg$serialn <- curr_data$ODIN[i_dev]
+    all_data.tavg$lat <- curr_data$lat[i_dev]
+    all_data.tavg$lon <- curr_data$lon[i_dev]
   } else {
     all_data <- rbind(all_data,c_data)
-    tmp10min <- timeAverage(c_data,avg.time = '1 hour')
+    tmp10min <- timeAverage(c_data,avg.time = time_avg)
     tmp10min$serialn <- curr_data$ODIN[i_dev]
     tmp10min$lat <- curr_data$lat[i_dev]
     tmp10min$lon <- curr_data$lon[i_dev]
-    all_data.10min <- rbind(all_data.10min,tmp10min)
+    all_data.tavg <- rbind(all_data.tavg,tmp10min)
   }
   curr_data$PM1[i_dev] <- mean(c_data$PM1,na.rm = TRUE)
   curr_data$PM2.5[i_dev] <- mean(c_data$PM2.5,na.rm = TRUE)
@@ -244,32 +247,33 @@ for (i_dev in (1:ndev)){
   rm(c_data)
 }
 
-# Correct from colocation data
+# Correct from colocation data #####
 # Get colo data
-reg.data <- read.delim("~/data/CONA/2018/colo_1/regression_data.txt",sep = "\t")
-for (serialn in unique(all_data.10min$serialn)){
+reg.data <- read.delim(paste0(data_path,"regression_data.txt"),sep = "\t")
+for (serialn in unique(all_data.tavg$serialn)){
   reg.id <- which(reg.data$ODIN == serialn)
-  data.id <- which(all_data.10min$serialn == serialn)
-  all_data.10min[data.id,c("PM1")] <- all_data.10min[data.id,c("PM1")] * reg.data$pm1.slp[reg.id] + reg.data$pm1.int[reg.id]
-  all_data.10min[data.id,c("PM2.5")] <- all_data.10min[data.id,c("PM2.5")] * reg.data$pm2.5.slp[reg.id] + reg.data$pm2.5.int[reg.id]
-  all_data.10min[data.id,c("PM10")] <- all_data.10min[data.id,c("PM10")] * reg.data$pm10.slp[reg.id] + reg.data$pm10.int[reg.id]
+  data.id <- which(all_data.tavg$serialn == serialn)
+  all_data.tavg[data.id,c("PM1")] <- all_data.tavg[data.id,c("PM1")] * reg.data$pm1.slp[reg.id] + reg.data$pm1.int[reg.id]
+  all_data.tavg[data.id,c("PM2.5")] <- all_data.tavg[data.id,c("PM2.5")] * reg.data$pm2.5.slp[reg.id] + reg.data$pm2.5.int[reg.id]
+  all_data.tavg[data.id,c("PM10")] <- all_data.tavg[data.id,c("PM10")] * reg.data$pm10.slp[reg.id] + reg.data$pm10.int[reg.id]
 }
+
 
 coordinates(curr_data) <- ~ lon + lat
 proj4string(curr_data) <- CRS('+init=epsg:4326')
-coordinates(all_data.10min) <- ~ lon + lat
-proj4string(all_data.10min) <- CRS('+init=epsg:4326')
-# Re-project to NZTM
-all_data.10min <- spTransform(all_data.10min,CRS('+init=epsg:2193'))
+coordinates(all_data.tavg) <- ~ lon + lat
+proj4string(all_data.tavg) <- CRS('+init=epsg:4326')
+# Re-project to NZTM #####
+all_data.tavg <- spTransform(all_data.tavg,CRS('+init=epsg:2193'))
 
 print("Starting the kriging")
 
-#Setting the  prediction grid properties
+#Setting the  prediction grid properties #####
 cellsize <- 100 #pixel size in projection units (NZTM, i.e. metres)
-min_x <- all_data.10min@bbox[1,1] - cellsize#minimun x coordinate
-min_y <- all_data.10min@bbox[2,1] - cellsize #minimun y coordinate
-max_x <- all_data.10min@bbox[1,2] + cellsize #mximum x coordinate
-max_y <- all_data.10min@bbox[2,2] + cellsize #maximum y coordinate
+min_x <- all_data.tavg@bbox[1,1] - cellsize#minimun x coordinate
+min_y <- all_data.tavg@bbox[2,1] - cellsize #minimun y coordinate
+max_x <- all_data.tavg@bbox[1,2] + cellsize #mximum x coordinate
+max_y <- all_data.tavg@bbox[2,2] + cellsize #maximum y coordinate
 
 x_length <- max_x - min_x #easting amplitude
 y_length <- max_y - min_y #northing amplitude
@@ -279,19 +283,19 @@ nrow <- round(y_length/cellsize,0) #number of rows in grid
 
 grid <- GridTopology(cellcentre.offset=c(min_x,min_y),cellsize=c(cellsize,cellsize),cells.dim=c(ncol,nrow))
 
-#Convert GridTopolgy object to SpatialPixelsDataFrame object.
+#Convert GridTopolgy object to SpatialPixelsDataFrame object. #####
 grid <- SpatialPixelsDataFrame(grid,
                                data=data.frame(id=1:prod(ncol,nrow)),
                                proj4string=CRS('+init=epsg:2193'))
 
 
 # Get rid of NA containing rows
-all_data.10min <- subset(all_data.10min,!is.na(PM2.5))
-all_dates <- sort(unique(all_data.10min$date))
-# limits for colorscales
-cmin <- min(all_data.10min$PM2.5)
-cmax <- max(all_data.10min$PM2.5) * 0.5
-
+all_data.tavg <- subset(all_data.tavg,!is.na(PM2.5))
+all_dates <- sort(unique(all_data.tavg$date))
+# limits for colorscales #####
+cmin <- min(all_data.tavg$PM2.5)
+cmax <- max(all_data.tavg$PM2.5) * 0.5
+## Interpolate and plot #####
 ndates <- length(all_dates)
 breaks <- as.numeric(quantile((1:ndates),c(0,0.5,1), type = 1))
 nbreaks <- length(breaks)
@@ -306,7 +310,7 @@ for (j in (1:(nbreaks-1))){
     j2 <- breaks[j+1]
   }
   for (d_slice in (j1:j2)){
-    c_data <- subset(all_data.10min,subset = (date==all_dates[d_slice]))
+    c_data <- subset(all_data.tavg,subset = (date==all_dates[d_slice]))
     
     if (length(unique(c_data$serialn))<4){
       next
@@ -374,7 +378,7 @@ for (j in (1:(nbreaks-1))){
                              alpha = 0.85) +
       scale_fill_gradient(low="white", high="red",limits=c(0, cmax), name = "PM2.5", oob=squish) +
       ggtitle(paste(as.character(all_dates[d_slice]+12*3600),"NZST"))
-    ggsave(filename=paste0('~/data/CONA/2018/idw/',as.character(all_dates[d_slice]),'.png'), plot=map_out, width=6, height=6, units = "in")
+    ggsave(filename=paste0(data_path,'idw/',format(all_dates[d_slice]+12*3600,format = "%Y-%m-%d %H:%M"),'.png'), plot=map_out, width=6, height=6, units = "in")
     
     map_out <- ggmap(ca) + geom_polygon(data = rtp2,aes(x = long, y = lat, group = group, 
                                                        fill = rep(rtp[[1]], each = 5)), 
@@ -382,25 +386,26 @@ for (j in (1:(nbreaks-1))){
                                         alpha = 0.8) +
       scale_fill_gradient(low="white", high="red",limits=c(0, cmax), name = "PM2.5", oob=squish) +
       ggtitle(paste(as.character(all_dates[d_slice]+12*3600),"NZST"))
-    ggsave(filename=paste0('~/data/CONA/2018/idw2/',as.character(all_dates[d_slice]),'.png'),
+    ggsave(filename=paste0(data_path,'idw2/',format(all_dates[d_slice]+12*3600,format = "%Y-%m-%d %H:%M"),'.png'),
            plot=map_out,
            width=6,
            height=6,
            units = "in")
 
   }
-  save('raster_cat.idw',file = paste0('~/data/CONA/2018/raster_cat.idw.',fidx,'.RData'))
-  save('raster_cat.idw2',file = paste0('~/data/CONA/2018/raster_cat.idw2.',fidx,'.Rdata'))
+  save('raster_cat.idw',file = paste0(data_path,'raster_cat.idw.',fidx,'.RData'))
+  save('raster_cat.idw2',file = paste0(data_path,'raster_cat.idw2.',fidx,'.Rdata'))
   rm('raster_cat.idw')
   rm('raster_cat.idw2')
   fidx <- fidx + 1
   print("Done with interpolating ...")
 }
+# Stacking the raster #####
 print("Stacking")
 fidx <- fidx
 for (i in (1:(fidx-1))){
-  load(paste0('~/data/CONA/2018/raster_cat.idw.',i,'.RData'))
-  load(paste0('~/data/CONA/2018/raster_cat.idw2.',i,'.Rdata'))
+  load(paste0(data_path,'raster_cat.idw.',i,'.RData'))
+  load(paste0(data_path,'raster_cat.idw2.',i,'.Rdata'))
   if (i == 1){
     raster_stack.idw <- raster_cat.idw
     raster_stack.idw2 <- raster_cat.idw2
@@ -425,33 +430,37 @@ for (i in (1:(fidx-1))){
 #raster_cat_LL <- projectRaster(raster_cat,crs = "+proj=longlat +datum=WGS84")
 raster_cat_idw_LL <- projectRaster(raster_stack.idw,crs = "+proj=longlat +datum=WGS84")
 raster_cat_idw2_LL <- projectRaster(raster_stack.idw2,crs = "+proj=longlat +datum=WGS84")
-save(list = c('raster_cat_idw_LL','raster_cat_idw2_LL'),file = '~/data/CONA/2018/raster_odin_LL_IDW.RData')
+save(list = c('raster_cat_idw_LL','raster_cat_idw2_LL'),file = paste0(data_path,"raster_odin_LL_IDW.RData"))
 
 #writeRaster(raster_cat_LL, filename="./odin_June-July2017_autokrig.nc", overwrite=TRUE)
-writeRaster(raster_cat_idw_LL, filename="~/data/CONA/2018/odin_idw.nc", overwrite=TRUE)
-writeRaster(raster_cat_idw2_LL, filename="~/data/CONA/2018/odin_idw2.nc", overwrite=TRUE)
+writeRaster(raster_cat_idw_LL, filename=paste0(data_path,"odin_idw.nc"), overwrite=TRUE)
+writeRaster(raster_cat_idw2_LL, filename=paste0(data_path,"odin_idw2.nc"), overwrite=TRUE)
 
 #writeRaster(raster_stack.idw$X2018.07.06.08.00.00,filename = "~/data/CONA/2018/odin_idw2.tif", overwrite=TRUE)
 #writeRaster(raster_cat_idw_LL$X2018.07.06.08.00.00,filename = "~/data/CONA/2018/odin_idw2_LL.tif", overwrite=TRUE)
 
-writeOGR(obj = curr_data[,(1:7)],dsn = "~/data/CONA/2018/",layer = "odin_sites",driver = "ESRI Shapefile",overwrite_layer = TRUE)
+writeOGR(obj = curr_data[,(1:7)],dsn = data_path,layer = "odin_sites",driver = "ESRI Shapefile",overwrite_layer = TRUE)
 
-tseries <- ggplot(data = data.frame(all_data.10min),aes(x=date)) +
-  geom_line(aes(y=PM2.5,colour=serialn))
 
-ggsave(filename=paste0('~/data/CONA/2018/',format(min(all_data.10min$date) + 12*3600,format = "%Y%m%d"),"_",
-                       format(max(all_data.10min$date) + 12*3600,format = "%Y%m%d"),'.png'),
-       plot=map_out,
+tseries <- ggplot(data = data.frame(all_data.tavg),aes(x=date)) +
+  geom_line(aes(y=PM2.5,colour=serialn)) +
+  xlab("UTC") +
+  ylab("PM2.5")
+
+
+ggsave(filename=paste0(data_path,format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
+                       format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),'.png'),
+       plot=tseries,
        width=12,
        height=6,
        units = "in")
-
-system(paste0("convert -delay 20 -loop 0 ~/data/CONA/2018/idw/*.png ~/data/CONA/2018/idw/",
-              format(min(all_data.10min$date) + 12*3600,format = "%Y%m%d"),"_",
-              format(max(all_data.10min$date) + 12*3600,format = "%Y%m%d"),
+## Create animated GIF
+system(paste0("convert -delay 20 -loop 0 ",data_path,"idw/*.png ",data_path,"idw/",
+              format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
+              format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
                 ".gif"))
 
-system(paste0("convert -delay 20 -loop 0 ~/data/CONA/2018/idw2/*.png ~/data/CONA/2018/idw2/",
-              format(min(all_data.10min$date) + 12*3600,format = "%Y%m%d"),"_",
-              format(max(all_data.10min$date) + 12*3600,format = "%Y%m%d"),
+system(paste0("convert -delay 20 -loop 0 ",data_path,"idw2/*.png ",data_path,"idw2/",
+              format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
+              format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
               ".gif"))
