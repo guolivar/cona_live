@@ -91,7 +91,7 @@ for (i in (1:nsites)){
 
 # Get devices locations
 proj4string <- "+proj=tmerc +lat_0=0.0 +lon_0=173.0 +k=0.9996 +x_0=1600000.0 +y_0=10000000.0 +datum=WGS84 +units=m"
-odin_locations <- read_delim("./odin_locations.txt", 
+odin_locations <- read_delim(paste0(data_path,"odin_locations.txt"), 
                              "\t", escape_double = FALSE, trim_ws = TRUE)
 curr_data$lat <- NA
 curr_data$lon <- NA
@@ -114,8 +114,7 @@ max_nmeas <- 60*12
 ndev <- length(curr_data$deviceid)
 
 ## Prepare the map to plot animations #####
-## Set the Scale
-breaks<-(c(0,10,20,40,60,80,120,200,300)) # for color scale
+
 # Get the basemap
 ca <- get_map(
   c(lon=centre_lon,lat=centre_lat),
@@ -124,10 +123,12 @@ ca <- get_map(
   maptype="terrain") # can change to terrain
 
 ## Get the timeseries data #####
-# UTC time start
-t_start <- as.numeric(as.POSIXct("2018/07/06 12:00:00",tz = "GMT-12"))
-# UTC time start
-t_end <- as.numeric(as.POSIXct("2018/07/25 12:00:00",tz = "GMT-12"))
+# UTC time start ... 24 hours ago
+x_now <- Sys.time()
+print(x_now)
+t_start <- floor(as.numeric(x_now) - 24 * 3600)
+# UTC time end ... now
+t_end <- floor(as.numeric(x_now))
 # Set the averaging interval
 time_avg <- '15 min'
 
@@ -278,10 +279,10 @@ print("Starting the kriging")
 
 #Setting the  prediction grid properties #####
 cellsize <- 100 #pixel size in projection units (NZTM, i.e. metres)
-min_x <- all_data.tavg@bbox[1,1] - cellsize#minimun x coordinate
-min_y <- all_data.tavg@bbox[2,1] - cellsize #minimun y coordinate
-max_x <- all_data.tavg@bbox[1,2] + cellsize #mximum x coordinate
-max_y <- all_data.tavg@bbox[2,2] + cellsize #maximum y coordinate
+min_x <- all_data.tavg@bbox[1,1] - cellsize - 1000 #minimun x coordinate 1km south
+min_y <- all_data.tavg@bbox[2,1] - cellsize - 1000 #minimun y coordinate 1km west
+max_x <- all_data.tavg@bbox[1,2] + cellsize + 1000 #mximum x coordinate 1km north
+max_y <- all_data.tavg@bbox[2,2] + cellsize + 1000 #maximum y coordinate 1km east
 
 x_length <- max_x - min_x #easting amplitude
 y_length <- max_y - min_y #northing amplitude
@@ -423,19 +424,6 @@ for (i in (1:(fidx-1))){
   }
 }
 
-#x_bbox[1,] <-c(min(x_coords[,1]),min(x_coords[,2]))
-#x_bbox[2,] <-c(max(x_coords[,1]),max(x_coords[,2]))
-#krigged_odin_data <- SpatialPointsDataFrame(coords = x_coords, data = x_data, coords.nrs = x_coords.nrs, bbox = x_bbox)
-#proj4string(krigged_odin_data) <- CRS('+init=epsg:2193')
-#krigged_odin_data <- spTransform(krigged_odin_data,CRS("+proj=longlat +datum=WGS84"))
-
-
-#writeOGR(krigged_odin_data, ".", "JuneJuly2017_pm25_10_min_krigged", driver = "ESRI Shapefile", overwrite_layer = TRUE)
-
-
-#save(krigged_odin_data,file='/data/data_gustavo/cona/krigged_data_JuneJuly2017.RData')
-
-#raster_cat_LL <- projectRaster(raster_cat,crs = "+proj=longlat +datum=WGS84")
 raster_cat_idw_LL <- projectRaster(raster_stack.idw,crs = "+proj=longlat +datum=WGS84")
 raster_cat_idw2_LL <- projectRaster(raster_stack.idw2,crs = "+proj=longlat +datum=WGS84")
 save(list = c('raster_cat_idw_LL','raster_cat_idw2_LL'),file = paste0(data_path,"raster_odin_LL_IDW.RData"))
@@ -444,24 +432,6 @@ save(list = c('raster_cat_idw_LL','raster_cat_idw2_LL'),file = paste0(data_path,
 writeRaster(raster_cat_idw_LL, filename=paste0(data_path,"odin_idw.nc"), overwrite=TRUE)
 writeRaster(raster_cat_idw2_LL, filename=paste0(data_path,"odin_idw2.nc"), overwrite=TRUE)
 
-#writeRaster(raster_stack.idw$X2018.07.06.08.00.00,filename = "~/data/CONA/2018/odin_idw2.tif", overwrite=TRUE)
-#writeRaster(raster_cat_idw_LL$X2018.07.06.08.00.00,filename = "~/data/CONA/2018/odin_idw2_LL.tif", overwrite=TRUE)
-
-writeOGR(obj = curr_data[,(1:7)],dsn = data_path,layer = "odin_sites",driver = "ESRI Shapefile",overwrite_layer = TRUE)
-
-
-tseries <- ggplot(data = data.frame(all_data.tavg),aes(x=date)) +
-  geom_line(aes(y=PM2.5,colour=serialn)) +
-  xlab("UTC") +
-  ylab("PM2.5")
-
-
-ggsave(filename=paste0(data_path,format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
-                       format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),'.png'),
-       plot=tseries,
-       width=12,
-       height=6,
-       units = "in")
 
 ## Create MP4 video
 system(paste0("ffmpeg -f image2 -r 6 -pattern_type glob -i '",
@@ -483,3 +453,34 @@ system(paste0("ffmpeg -f image2 -r 6 -pattern_type glob -i '",
               format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
               format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
               ".mp4"))
+
+
+
+## Upload to youtube
+system(paste0("youtube-upload --title=\"Alexandra ",
+              format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d %H:%M"),
+              " to ",
+              format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d %H:%M"),
+              "\" --client-secrets=client_secrets.json ",
+              data_path,
+              "idw2/",
+              format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
+              format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
+              ".mp4 --playlist=\"Alexandra 2018 - ODIN\""))
+
+## Remove files
+system(paste0("rm -rf ",
+              data_path,
+              "idw/*"))
+system(paste0("rm -rf ",
+              data_path,
+              "idw2/*"))
+
+## Upload data
+
+
+RCurl::ftpUpload(paste0(data_path,"odin_idw.nc"),
+                 "ftp://ftp.niwa.co.nz/incoming/GustavoOlivares/odin_alexandra/odin_idw.nc")
+RCurl::ftpUpload(paste0(data_path,"odin_idw2.nc"),
+                 "ftp://ftp.niwa.co.nz/incoming/GustavoOlivares/odin_alexandra/odin_idw2.nc")
+
