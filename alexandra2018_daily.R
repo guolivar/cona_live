@@ -265,8 +265,22 @@ for (serialn in unique(all_data.tavg$serialn)){
   all_data.tavg[data.id,c("PM1")] <- all_data.tavg[data.id,c("PM1")] * reg.data$pm1.slp[reg.id] + reg.data$pm1.int[reg.id]
   all_data.tavg[data.id,c("PM2.5")] <- all_data.tavg[data.id,c("PM2.5")] * reg.data$pm2.5.slp[reg.id] + reg.data$pm2.5.int[reg.id]
   all_data.tavg[data.id,c("PM10")] <- all_data.tavg[data.id,c("PM10")] * reg.data$pm10.slp[reg.id] + reg.data$pm10.int[reg.id]
+  data.id <- which(all_data$serialn == serialn)
+  all_data[data.id,c("PM1")] <- all_data[data.id,c("PM1")] * reg.data$pm1.slp[reg.id] + reg.data$pm1.int[reg.id]
+  all_data[data.id,c("PM2.5")] <- all_data[data.id,c("PM2.5")] * reg.data$pm2.5.slp[reg.id] + reg.data$pm2.5.int[reg.id]
+  all_data[data.id,c("PM10")] <- all_data[data.id,c("PM10")] * reg.data$pm10.slp[reg.id] + reg.data$pm10.int[reg.id]
 }
 
+readr::write_csv(all_data,paste0(data_path,
+                                 'all_data',
+                                 format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
+                                 format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
+                                 ".txt"),append = FALSE)
+readr::write_csv(all_data.tavg,paste0(data_path,
+                                 'all_dataAVG',
+                                 format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
+                                 format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
+                                 ".txt"),append = FALSE)
 
 coordinates(curr_data) <- ~ lon + lat
 proj4string(curr_data) <- CRS('+init=epsg:4326')
@@ -433,7 +447,7 @@ writeRaster(raster_cat_idw_LL, filename=paste0(data_path,"odin_idw.nc"), overwri
 writeRaster(raster_cat_idw2_LL, filename=paste0(data_path,"odin_idw2.nc"), overwrite=TRUE)
 
 
-## Create MP4 video
+## Create MP4 video ####
 system(paste0("ffmpeg -f image2 -r 6 -pattern_type glob -i '",
               data_path,
               "idw/",
@@ -456,7 +470,7 @@ system(paste0("ffmpeg -f image2 -r 6 -pattern_type glob -i '",
 
 
 
-## Upload to youtube
+## Upload to youtube ####
 system(paste0("youtube-upload --title=\"Alexandra ",
               format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d %H:%M"),
               " to ",
@@ -468,7 +482,7 @@ system(paste0("youtube-upload --title=\"Alexandra ",
               format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
               ".mp4 --playlist=\"Alexandra 2018 - ODIN\""))
 
-## Remove files
+## Remove files ####
 system(paste0("rm -rf ",
               data_path,
               "idw/*"))
@@ -476,7 +490,31 @@ system(paste0("rm -rf ",
               data_path,
               "idw2/*"))
 
-## Upload data
+## Upload data ####
+# Compress TXT files
+system(paste0("tar -zcvf ",
+              data_path,
+              'all_data',
+              format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
+              format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
+              ".tgz ",
+              data_path,
+              'all_data',
+              format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
+              format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
+              ".txt"))
+
+system(paste0("tar -zcvf ",
+              data_path,
+              'all_dataAVG',
+              format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
+              format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
+              ".tgz ",
+              data_path,
+              'all_dataAVG',
+              format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
+              format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
+              ".txt"))
 
 
 RCurl::ftpUpload(paste0(data_path,"odin_idw.nc"),
@@ -484,3 +522,23 @@ RCurl::ftpUpload(paste0(data_path,"odin_idw.nc"),
 RCurl::ftpUpload(paste0(data_path,"odin_idw2.nc"),
                  "ftp://ftp.niwa.co.nz/incoming/GustavoOlivares/odin_alexandra/odin_idw2.nc")
 
+RCurl::ftpUpload(paste0(data_path,
+                        'all_data',
+                        format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
+                        format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
+                        ".tgz "),
+                 paste0("ftp://ftp.niwa.co.nz/incoming/GustavoOlivares/odin_alexandra/",
+                        'all_data_',
+                        format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
+                        format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
+                        ".tgz "))
+RCurl::ftpUpload(paste0(data_path,
+                        'all_dataAVG',
+                        format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
+                        format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
+                        ".tgz "),
+                 paste0("ftp://ftp.niwa.co.nz/incoming/GustavoOlivares/odin_alexandra/",
+                        'all_dataAVG_',
+                        format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
+                        format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
+                        ".tgz "))
