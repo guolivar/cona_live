@@ -526,19 +526,19 @@ RCurl::ftpUpload(paste0(data_path,
                         'all_data',
                         format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
                         format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
-                        ".tgz "),
+                        ".tgz"),
                  paste0("ftp://ftp.niwa.co.nz/incoming/GustavoOlivares/odin_alexandra/",
                         'all_data_',
                         format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
                         format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
-                        ".tgz "))
+                        ".tgz"))
 RCurl::ftpUpload(paste0(data_path,
                         'all_dataAVG',
                         format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
                         format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
-                        ".tgz "),
+                        ".tgz"),
                  paste0("ftp://ftp.niwa.co.nz/incoming/GustavoOlivares/odin_alexandra/",
                         'all_dataAVG_',
                         format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
                         format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
-                        ".tgz "))
+                        ".tgz"))
