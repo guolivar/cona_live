@@ -16,7 +16,7 @@ secret_hologram <- read_delim("./secret_hologram.txt",
                               "\t", escape_double = FALSE, trim_ws = TRUE)
 # Get the devices ID
 base_url <- "https://dashboard.hologram.io/api/1/devices?"
-tag <- "cona2018"
+tag <- "alexandra"
 built_url <- paste0(base_url,
                     "orgid=",secret_hologram$orgid,"&",
                     "tagname=",tag,"&",
@@ -86,6 +86,19 @@ for (i in (1:nsites)){
 
 centre_lat <- mean(curr_data$lat)
 centre_lon <- mean(curr_data$lon)
+cmap <- get_googlemap(c(centre_lon,centre_lat),zoom=15,scale = 2, key = "AIzaSyACi3pNvPQTxZWx5u0nTtke598dPqdgySg")
+
+# Map of latest measurements
+output$plot1 <- renderPlot({
+  ggmap(cmap) +
+    geom_point(data = curr_data,
+               aes(x=lon,y=lat,colour=Temperature),
+               alpha=curr_data$mask,
+               size=20) +
+    geom_text(data=curr_data,aes(x=lon,y=lat,label=substring(ODIN,1,9))) +
+    ggtitle("Latest reading [Temperature]") +
+    scale_colour_gradient(low="white", high="red")
+},width = 1024,height=1024)
 
 # Now get datafor last 12 hours and calculate average for mapping
 # Cycle through each deviceID and calculate the 12hr average up to now
@@ -169,12 +182,11 @@ output$table <- DT::renderDataTable({
   },
   options = list(pageLength = 18))
 })
-  output$plot1 <- renderPlot({
-    cmap <- get_map(c(centre_lon,centre_lat),zoom=15,scale = 2)
+  output$plot2 <- renderPlot({
     ggmap(cmap) +
       geom_point(data = curr_data,
                  aes(x=lon,y=lat,colour=PM2.5),
-                 alpha=1,
+                 alpha=curr_data$mask,
                  size=20) +
       geom_text(data=curr_data,aes(x=lon,y=lat,label=substring(ODIN,1,9))) +
       ggtitle("PM2.5 average for the last 12 hours") +

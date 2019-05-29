@@ -29,8 +29,8 @@ pageWithSidebar(
     DT::dataTableOutput("table")
   ),
   mainPanel(
-    plotOutput('plot1')
+    tabsetPanel(type = "tabs",
+                tabPanel("Temperature", plotOutput('plot1')),
+                tabPanel("PM2.5",plotOutput('plot2')))
   )
 )
-
-

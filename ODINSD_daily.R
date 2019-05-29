@@ -1,16 +1,11 @@
-##### Load relevant packages #####
+#' title: Check ODIN deployment
+#' author: Gustavo Olivares
+#' 
+
+#' ## Load relevant packages
 library(librarian) # To more flexibly manage packages
 shelf(readr,
       reshape2,
-      automap,
-      raster,
-      gstat,
-      sp,
-      rgdal,
-      ggmap,
-      scales,
-      gstat,
-      RNetCDF,
       RJSONIO,
       curl,
       base64enc,
@@ -18,13 +13,11 @@ shelf(readr,
       openair,
       stringi,
       viridis,
-      dplyr,
-      RColorBrewer,
-      purrr,
-      magick)
+      dplyr)
 
 ##### Set the working directory DB ####
-setwd("~/repositories/cona_live/mapping/")
+work_path <- path.expand("~/repositories/cona_live/odin_live_check/")
+setwd(work_path)
 data_path <- "./"
 ##### Read the credentials file (ignored by GIT repository) ####
 secret_hologram <- read_delim("./secret_hologram.txt", 
@@ -34,7 +27,7 @@ secret_hologram <- read_delim("./secret_hologram.txt",
 
 # Get the devices ID #####
 base_url <- "https://dashboard.hologram.io/api/1/devices?"
-tag <- "alexandra"
+tag <- "glen_eden_colo"
 built_url <- paste0(base_url,
                     "orgid=",secret_hologram$orgid,"&",
                     "tagname=",tag,"&",

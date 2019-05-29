@@ -45,14 +45,14 @@ for (i in (1:nsites)){
 }
 
 # Choose ODIN
-i_dev <- grep(x=curr_data$ODIN,pattern = '0063')
+i_dev <- grep(x=curr_data$ODIN,pattern = 'Dev2')
 
 ## Get the timeseries data #####
 # UTC time start
 x_now <- Sys.time()
 print(x_now)
 # UTC time start
-t_start <- as.numeric(as.POSIXct("2018/08/09 12:00:00",tz = "GMT-12"))
+t_start <- as.numeric(as.POSIXct("2018/08/02 12:00:00",tz = "GMT-12"))
 # UTC time end ... now
 t_end <- floor(as.numeric(x_now))
 # Set the averaging interval
@@ -152,7 +152,7 @@ if (inherits(has_data,"try-error")) {
 }
 print(min(c_data$timestamp))
 print(max(c_data$timestamp))
-wrong_dates <- which(c_data$date <= as.POSIXct("2010/01/01"))
+wrong_dates <- which(is.na(c_data$date) | (c_data$date <= as.POSIXct("2010/01/01")) | c_data$date > as.POSIXct(Sys.time()))
 tmp_error_catching <- try(c_data$date[wrong_dates] <- c_data$timestamp[wrong_dates],
                           silent = TRUE)
 wrong_dates <- which(c_data$date <= as.POSIXct("2010/01/01"))
@@ -168,11 +168,11 @@ all_data.tavg$serialn <- curr_data$ODIN[i_dev]
 rm(c_data)
 
 # Plot data ####
-avg_plot <- '1 hour'
-timePlot(all_data,pollutant = c('PM1','PM2.5','PM10'),main = curr_data$ODIN[i_dev],avg.time = avg_plot,group = TRUE)
-scatterPlot(all_data,x='PM2.5',y='PM10',avg.time = avg_plot,linear = TRUE)
-scatterPlot(all_data,x='PM1',y='PM2.5',avg.time = avg_plot,linear = TRUE)
-scatterPlot(all_data,x='PM1',y='PM10',avg.time = avg_plot,linear = TRUE)
+avg_plot <- '10 min'
+timePlot(all_data,pollutant = c('PM1','PM2.5','PM10'),main = curr_data$ODIN[i_dev],avg.time = avg_plot,group = TRUE,ylim=c(0,100))
+#scatterPlot(all_data,x='PM2.5',y='PM10',avg.time = avg_plot,linear = TRUE)
+#scatterPlot(all_data,x='PM1',y='PM2.5',avg.time = avg_plot,linear = TRUE)
+#scatterPlot(all_data,x='PM1',y='PM10',avg.time = avg_plot,linear = TRUE)
 
-plot(all_data$date[1:(i-2)],all_data$date[2:(i-1)] - all_data$date[1:(i-2)],main = curr_data$ODIN[i_dev],ylim = c(-65,-55))
+#plot(all_data$date[1:(i-2)],all_data$date[2:(i-1)] - all_data$date[1:(i-2)],main = curr_data$ODIN[i_dev],ylim = c(-65,-55))
   

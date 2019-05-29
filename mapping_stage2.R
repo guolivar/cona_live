@@ -34,7 +34,7 @@ secret_hologram <- read_delim("./secret_hologram.txt",
 
 # Get the devices ID #####
 base_url <- "https://dashboard.hologram.io/api/1/devices?"
-tag <- "alexandra"
+tag <- "cona2018"
 built_url <- paste0(base_url,
                     "orgid=",secret_hologram$orgid,"&",
                     "tagname=",tag,"&",
@@ -91,7 +91,7 @@ for (i in (1:nsites)){
 
 # Get devices locations
 proj4string <- "+proj=tmerc +lat_0=0.0 +lon_0=173.0 +k=0.9996 +x_0=1600000.0 +y_0=10000000.0 +datum=WGS84 +units=m"
-odin_locations <- read_delim(paste0(data_path,"odin_locations.txt"), 
+odin_locations <- read_delim(paste0(data_path,"odin_locations_stage2.txt"), 
                              "\t", escape_double = FALSE, trim_ws = TRUE)
 curr_data$lat <- NA
 curr_data$lon <- NA
@@ -126,9 +126,9 @@ ca <- get_map(
 # UTC time start ... 24 hours ago
 x_now <- Sys.time()
 print(x_now)
-t_start <- floor(as.numeric(x_now) - 24 * 3600)
+t_start <- as.numeric(as.POSIXct("2018/09/05 12:00:00",tz = "GMT-12"))
 # UTC time end ... now
-t_end <- floor(as.numeric(x_now))
+t_end <- as.numeric(as.POSIXct("2018/09/12 12:00:00",tz = "GMT-12"))
 # Set the averaging interval
 time_avg <- '15 min'
 
@@ -225,10 +225,10 @@ for (i_dev in (1:ndev)){
   }
   print(min(c_data$timestamp))
   print(max(c_data$timestamp))
-  wrong_dates <- which(c_data$date <= as.POSIXct("2010/01/01"))
+  wrong_dates <- which(c_data$date <= as.POSIXct("2015/01/01"))
   tmp_error_catching <- try(c_data$date[wrong_dates] <- c_data$timestamp[wrong_dates],
                             silent = TRUE)
-  wrong_dates <- which(c_data$date <= as.POSIXct("2010/01/01"))
+  wrong_dates <- which(c_data$date <= as.POSIXct("2015/01/01"))
   tmp_error_catching <- try(c_data$date[wrong_dates] <- NA,
                             silent = TRUE)
   print(min(c_data$date))
@@ -258,18 +258,18 @@ for (i_dev in (1:ndev)){
 
 # Correct from colocation data #####
 # Get colo data
-reg.data <- read.delim(paste0(data_path,"regression_data.txt"),sep = "\t")
-for (serialn in unique(all_data.tavg$serialn)){
-  reg.id <- which(reg.data$ODIN == serialn)
-  data.id <- which(all_data.tavg$serialn == serialn)
-  all_data.tavg[data.id,c("PM1")] <- all_data.tavg[data.id,c("PM1")] * reg.data$pm1.slp[reg.id] + reg.data$pm1.int[reg.id]
-  all_data.tavg[data.id,c("PM2.5")] <- all_data.tavg[data.id,c("PM2.5")] * reg.data$pm2.5.slp[reg.id] + reg.data$pm2.5.int[reg.id]
-  all_data.tavg[data.id,c("PM10")] <- all_data.tavg[data.id,c("PM10")] * reg.data$pm10.slp[reg.id] + reg.data$pm10.int[reg.id]
-  data.id <- which(all_data$serialn == serialn)
-  all_data[data.id,c("PM1")] <- all_data[data.id,c("PM1")] * reg.data$pm1.slp[reg.id] + reg.data$pm1.int[reg.id]
-  all_data[data.id,c("PM2.5")] <- all_data[data.id,c("PM2.5")] * reg.data$pm2.5.slp[reg.id] + reg.data$pm2.5.int[reg.id]
-  all_data[data.id,c("PM10")] <- all_data[data.id,c("PM10")] * reg.data$pm10.slp[reg.id] + reg.data$pm10.int[reg.id]
-}
+# reg.data <- read.delim(paste0(data_path,"regression_data.txt"),sep = "\t")
+# for (serialn in unique(all_data.tavg$serialn)){
+#   reg.id <- which(reg.data$ODIN == serialn)
+#   data.id <- which(all_data.tavg$serialn == serialn)
+#   all_data.tavg[data.id,c("PM1")] <- all_data.tavg[data.id,c("PM1")] * reg.data$pm1.slp[reg.id] + reg.data$pm1.int[reg.id]
+#   all_data.tavg[data.id,c("PM2.5")] <- all_data.tavg[data.id,c("PM2.5")] * reg.data$pm2.5.slp[reg.id] + reg.data$pm2.5.int[reg.id]
+#   all_data.tavg[data.id,c("PM10")] <- all_data.tavg[data.id,c("PM10")] * reg.data$pm10.slp[reg.id] + reg.data$pm10.int[reg.id]
+#   data.id <- which(all_data$serialn == serialn)
+#   all_data[data.id,c("PM1")] <- all_data[data.id,c("PM1")] * reg.data$pm1.slp[reg.id] + reg.data$pm1.int[reg.id]
+#   all_data[data.id,c("PM2.5")] <- all_data[data.id,c("PM2.5")] * reg.data$pm2.5.slp[reg.id] + reg.data$pm2.5.int[reg.id]
+#   all_data[data.id,c("PM10")] <- all_data[data.id,c("PM10")] * reg.data$pm10.slp[reg.id] + reg.data$pm10.int[reg.id]
+# }
 
 readr::write_csv(all_data,paste0(data_path,
                                  'all_data',
@@ -277,10 +277,10 @@ readr::write_csv(all_data,paste0(data_path,
                                  format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
                                  ".txt"),append = FALSE)
 readr::write_csv(all_data.tavg,paste0(data_path,
-                                 'all_dataAVG',
-                                 format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
-                                 format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
-                                 ".txt"),append = FALSE)
+                                      'all_dataAVG',
+                                      format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
+                                      format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
+                                      ".txt"),append = FALSE)
 
 coordinates(curr_data) <- ~ lon + lat
 proj4string(curr_data) <- CRS('+init=epsg:4326')
@@ -387,19 +387,19 @@ for (d_slice in (1:ndates)){
   rtp <- rasterToPolygons(projectRaster(r0.idw,crs = "+proj=longlat +datum=WGS84"))
   rtp2 <- rasterToPolygons(projectRaster(r0.idw2,crs = "+proj=longlat +datum=WGS84"))
   points <- data.frame(spTransform(c_data,CRS('+init=epsg:4326')))
-
+  
   # Build the animation
   map_out <- ggmap(ca) + geom_polygon(data = rtp,aes(x = long, y = lat, group = group, 
-                                          fill = rep(rtp[[1]], each = 5)), 
-                           size = 0, 
-                           alpha = 0.85) +
+                                                     fill = rep(rtp[[1]], each = 5)), 
+                                      size = 0, 
+                                      alpha = 0.85) +
     scale_fill_gradient(low="white", high="red",limits=c(0, cmax), name = "PM2.5", oob=squish) +
     geom_point(data=points,aes(x=lon,y=lat),colour = "black") +
     ggtitle(paste(as.character(all_dates[d_slice]+12*3600),"NZST"))
   ggsave(filename=paste0(data_path,'idw/',format(all_dates[d_slice]+12*3600,format = "%Y-%m-%d %H:%M"),'.png'), plot=map_out, width=6, height=6, units = "in")
   
   map_out <- ggmap(ca) + geom_polygon(data = rtp2,aes(x = long, y = lat, group = group, 
-                                                     fill = rep(rtp[[1]], each = 5)), 
+                                                      fill = rep(rtp[[1]], each = 5)), 
                                       size = 0, 
                                       alpha = 0.8) +
     scale_fill_gradient(low="white", high="red",limits=c(0, cmax), name = "PM2.5", oob=squish) +
@@ -410,7 +410,7 @@ for (d_slice in (1:ndates)){
          width=6,
          height=6,
          units = "in")
-
+  
 }
 save('raster_cat.idw',file = paste0(data_path,'raster_cat.idw.RData'))
 save('raster_cat.idw2',file = paste0(data_path,'raster_cat.idw2.Rdata'))
@@ -438,7 +438,7 @@ ggsave(filename = paste0(data_path,
 # IDW
 lat_dim <- unique(coordinates(raster_cat_idw_LL)[,2])
 lon_dim <- unique(coordinates(raster_cat_idw_LL)[,1])
-tim_dim <- all_dates[valid_dates]
+tim_dim <- all_dates[valid_dates==1]
 nc.idw <- create.nc("odin_idw.nc")
 # Dimensions specifications
 dim.def.nc(nc.idw, "time", unlim=TRUE)
@@ -468,7 +468,7 @@ att.put.nc(nc.idw,"pm2p5","missing_value","NC_FLOAT",-999.9)
 
 # Global attributes
 att.put.nc(nc.idw,"NC_GLOBAL","title","NC_CHAR","PM2.5 interpolated surface (Inverse Square Distance)")
-att.put.nc(nc.idw,"NC_GLOBAL","Conventions","NC_CHAR","CF-1.7")
+att.put.nc(nc.idw,"NC_GLOBAL","Conventions","NC_CHAR","CF-1.6")
 att.put.nc(nc.idw,"NC_GLOBAL","Institution","NC_CHAR","NIWA (National Institute of Water and Atmospheric Research, Auckland, New Zealand)")
 att.put.nc(nc.idw,"NC_GLOBAL","project_id","NC_CHAR","CONA - 2018")
 att.put.nc(nc.idw,"NC_GLOBAL","history","NC_CHAR",paste0(format(max(all_data.tavg$date),format = "%Y%m%d"),
@@ -491,7 +491,7 @@ close.nc(nc.idw)
 # IDW2
 lat_dim <- unique(coordinates(raster_cat_idw2_LL)[,2])
 lon_dim <- unique(coordinates(raster_cat_idw2_LL)[,1])
-tim_dim <- all_dates[valid_dates]
+tim_dim <- all_dates[valid_dates==1]
 nc.idw2 <- create.nc("odin_idw2.nc")
 # Dimensions specifications
 dim.def.nc(nc.idw2, "time", unlim=TRUE)
@@ -521,11 +521,11 @@ att.put.nc(nc.idw2,"pm2p5","missing_value","NC_FLOAT",-999.9)
 
 # Global attributes
 att.put.nc(nc.idw2,"NC_GLOBAL","title","NC_CHAR","PM2.5 interpolated surface (Inverse Square Distance)")
-att.put.nc(nc.idw2,"NC_GLOBAL","Conventions","NC_CHAR","CF-1.7")
+att.put.nc(nc.idw2,"NC_GLOBAL","Conventions","NC_CHAR","CF-1.6")
 att.put.nc(nc.idw2,"NC_GLOBAL","Institution","NC_CHAR","NIWA (National Institute of Water and Atmospheric Research, Auckland, New Zealand)")
 att.put.nc(nc.idw2,"NC_GLOBAL","project_id","NC_CHAR","CONA - 2018")
 att.put.nc(nc.idw2,"NC_GLOBAL","history","NC_CHAR",paste0(format(max(all_data.tavg$date),format = "%Y%m%d"),
-                                                         " Data generated and formatted"))
+                                                          " Data generated and formatted"))
 att.put.nc(nc.idw2,"NC_GLOBAL","comment","NC_CHAR","Data for visualisation only")
 
 # Load data
@@ -534,8 +534,8 @@ var.put.nc(nc.idw2,"longitude",lon_dim)
 var.put.nc(nc.idw2,"time",as.numeric(tim_dim))
 rast_data2 <- getValues(raster_cat_idw2_LL)[,(1:length(tim_dim))]
 dim(rast_data2) <- c(length(lon_dim),
-                    length(lat_dim),
-                    length(tim_dim))
+                     length(lat_dim),
+                     length(tim_dim))
 var.put.nc(nc.idw2,"pm2p5",rast_data2)
 
 # Close the file and save
@@ -547,7 +547,7 @@ system(paste0("ffmpeg -f image2 -r 6 -pattern_type glob -i '",
               "idw/",
               "*.png' ",
               data_path,
-              "idw/",
+              "idw_",
               format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
               format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
               ".mp4"))
@@ -557,21 +557,21 @@ system(paste0("ffmpeg -f image2 -r 6 -pattern_type glob -i '",
               "idw2/",
               "*.png' ",
               data_path,
-              "idw2/",
+              "idw2_",
               format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
               format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
               ".mp4"))
 
 
 
-## Upload to youtube ####
+# Upload to youtube ####
 system(paste0("youtube-upload --title=\"Alexandra ",
               format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d %H:%M"),
               " to ",
               format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d %H:%M"),
               "\" --client-secrets=client_secrets.json ",
               data_path,
-              "idw2/",
+              "idw2_",
               format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
               format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
               ".mp4 --playlist=\"Alexandra 2018 - ODIN\""))
@@ -604,9 +604,9 @@ system(paste0("tar -zcvf ",
 ## Upload data ####
 
 RCurl::ftpUpload(paste0(data_path,"odin_idw.nc"),
-                 "ftp://ftp.niwa.co.nz/incoming/GustavoOlivares/odin_alexandra/odin_idw.nc")
+                 "ftp://ftp.niwa.co.nz/incoming/GustavoOlivares/odin_alexandra/odin_idw_2anim.nc")
 RCurl::ftpUpload(paste0(data_path,"odin_idw2.nc"),
-                 "ftp://ftp.niwa.co.nz/incoming/GustavoOlivares/odin_alexandra/odin_idw2.nc")
+                 "ftp://ftp.niwa.co.nz/incoming/GustavoOlivares/odin_alexandra/odin_idw2_2anim.nc")
 
 RCurl::ftpUpload(paste0(data_path,
                         'all_data',
@@ -630,21 +630,21 @@ RCurl::ftpUpload(paste0(data_path,
                         ".tgz"))
 
 ## Remove files ####
-system(paste0("rm -rf ",
-              data_path,
-              "idw/*"))
-system(paste0("rm -rf ",
-              data_path,
-              "idw2/*"))
-system(paste0('rm -f ',
-              data_path,
-              'all_data',
-              format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
-              format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
-              ".txt"))
-system(paste0('rm -f ',
-              data_path,
-              'all_dataAVG',
-              format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
-              format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
-              ".txt"))
+# system(paste0("rm -rf ",
+#               data_path,
+#               "idw/*"))
+# system(paste0("rm -rf ",
+#               data_path,
+#               "idw2/*"))
+# system(paste0('rm -f ',
+#               data_path,
+#               'all_data',
+#               format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
+#               format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
+#               ".txt"))
+# system(paste0('rm -f ',
+#               data_path,
+#               'all_dataAVG',
+#               format(min(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),"_",
+#               format(max(all_data.tavg$date) + 12*3600,format = "%Y%m%d"),
+#               ".txt"))
